@@ -68,6 +68,61 @@ fn handle_events(app: &mut App) -> Result<bool> {
     if let Event::Key(key) = event::read()? {
         match app.input_mode {
             InputMode::Normal => match app.view {
+                View::Dashboard => match key.code {
+                    KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('a') => {
+                        app.input.clear();
+                        app.input_mode = InputMode::InsertUrl;
+                    }
+                    KeyCode::Char('r') => {
+                        if let Err(e) = app.refresh_feeds() {
+                            app.error = Some(format!("Failed to refresh feeds: {}", e));
+                        }
+                    }
+                    KeyCode::Char('f') => {
+                        app.view = View::FeedList;
+                    }
+                    KeyCode::Char('/') => {
+                        app.input.clear();
+                        app.input_mode = InputMode::SearchMode;
+                    }
+                    KeyCode::Up => {
+                        if let Some(selected) = app.selected_item {
+                            if selected > 0 {
+                                app.selected_item = Some(selected - 1);
+                            }
+                        } else if !app.dashboard_items.is_empty() {
+                            app.selected_item = Some(0);
+                        }
+                    }
+                    KeyCode::Down => {
+                        if let Some(selected) = app.selected_item {
+                            if selected < app.dashboard_items.len() - 1 {
+                                app.selected_item = Some(selected + 1);
+                            }
+                        } else if !app.dashboard_items.is_empty() {
+                            app.selected_item = Some(0);
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(selected) = app.selected_item {
+                            if selected < app.dashboard_items.len() {
+                                let (feed_idx, item_idx) = app.dashboard_items[selected];
+                                app.selected_feed = Some(feed_idx);
+                                app.selected_item = Some(item_idx);
+                                app.view = View::FeedItemDetail;
+                            }
+                        }
+                    }
+                    KeyCode::Char('o') => {
+                        if app.selected_item.is_some() {
+                            if let Err(e) = app.open_current_item_in_browser() {
+                                app.error = Some(format!("Failed to open link: {}", e));
+                            }
+                        }
+                    }
+                    _ => {}
+                },
                 View::FeedList => match key.code {
                     KeyCode::Char('q') => return Ok(true),
                     KeyCode::Char('a') => {
@@ -77,6 +132,19 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Char('d') => {
                         if let Err(e) = app.remove_current_feed() {
                             app.error = Some(format!("Failed to remove feed: {}", e));
+                        }
+                    }
+                    KeyCode::Char('h') | KeyCode::Esc => {
+                        app.view = View::Dashboard;
+                        app.selected_item = None;
+                    }
+                    KeyCode::Char('/') => {
+                        app.input.clear();
+                        app.input_mode = InputMode::SearchMode;
+                    }
+                    KeyCode::Char('r') => {
+                        if let Err(e) = app.refresh_feeds() {
+                            app.error = Some(format!("Failed to refresh feeds: {}", e));
                         }
                     }
                     KeyCode::Up => {
@@ -107,9 +175,13 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 },
                 View::FeedItems => match key.code {
                     KeyCode::Char('q') => return Ok(true),
-                    KeyCode::Esc => {
+                    KeyCode::Esc | KeyCode::Char('h') => {
                         app.view = View::FeedList;
                         app.selected_item = None;
+                    }
+                    KeyCode::Char('/') => {
+                        app.input.clear();
+                        app.input_mode = InputMode::SearchMode;
                     }
                     KeyCode::Up => {
                         if let Some(selected) = app.selected_item {
@@ -131,12 +203,29 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             app.view = View::FeedItemDetail;
                         }
                     }
+                    KeyCode::Char('o') => {
+                        if app.selected_item.is_some() {
+                            if let Err(e) = app.open_current_item_in_browser() {
+                                app.error = Some(format!("Failed to open link: {}", e));
+                            }
+                        }
+                    }
                     _ => {}
                 },
                 View::FeedItemDetail => match key.code {
                     KeyCode::Char('q') => return Ok(true),
-                    KeyCode::Esc => {
-                        app.view = View::FeedItems;
+                    KeyCode::Esc | KeyCode::Char('h') => {
+                        if app.is_searching {
+                            app.view = View::Dashboard; // Go back to search results
+                            app.selected_item = Some(0);
+                        } else {
+                            app.view = View::FeedItems;
+                        }
+                    }
+                    KeyCode::Char('o') => {
+                        if let Err(e) = app.open_current_item_in_browser() {
+                            app.error = Some(format!("Failed to open link: {}", e));
+                        }
                     }
                     _ => {}
                 },
@@ -157,6 +246,27 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 }
                 KeyCode::Esc => {
                     app.input.clear();
+                    app.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char(c) => {
+                    app.input.push(c);
+                }
+                KeyCode::Backspace => {
+                    app.input.pop();
+                }
+                _ => {}
+            },
+            InputMode::SearchMode => match key.code {
+                KeyCode::Enter => {
+                    let query = app.input.trim().to_string();
+                    app.search_feeds(&query);
+                    app.selected_item = Some(0);
+                    app.view = View::Dashboard; // Show search results in dashboard
+                    app.input_mode = InputMode::Normal;
+                }
+                KeyCode::Esc => {
+                    app.input.clear();
+                    app.is_searching = false;
                     app.input_mode = InputMode::Normal;
                 }
                 KeyCode::Char(c) => {

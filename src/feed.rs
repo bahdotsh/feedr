@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
-use rss::Channel;
+use chrono::{DateTime, Utc};
+use rss::{Channel, Item};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct Feed {
     pub url: String,
     pub title: String,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
     pub items: Vec<FeedItem>,
 }
 
@@ -15,6 +18,9 @@ pub struct FeedItem {
     pub link: Option<String>,
     pub description: Option<String>,
     pub pub_date: Option<String>,
+    pub image_url: Option<String>,
+    pub author: Option<String>,
+    pub formatted_date: Option<String>,
 }
 
 impl Feed {
@@ -32,18 +38,69 @@ impl Feed {
         let items = channel
             .items()
             .iter()
-            .map(|item| FeedItem {
-                title: item.title().unwrap_or("Untitled").to_string(),
-                link: item.link().map(String::from),
-                description: item.description().map(String::from),
-                pub_date: item.pub_date().map(String::from),
-            })
+            .map(|item| FeedItem::from_rss_item(item))
             .collect();
 
         Ok(Feed {
             url: url.to_string(),
             title: channel.title().to_string(),
+            description: Some(channel.description().to_string()),
+            image_url: channel.image().map(|img| img.url().to_string()),
             items,
         })
+    }
+}
+
+impl FeedItem {
+    fn from_rss_item(item: &Item) -> Self {
+        let image_url = find_image_in_description(item.description().unwrap_or(""));
+
+        // Format the date for better display
+        let formatted_date = item.pub_date().and_then(|date_str| {
+            DateTime::parse_from_rfc2822(date_str)
+                .ok()
+                .map(|dt| format_date(dt.with_timezone(&Utc)))
+        });
+
+        FeedItem {
+            title: item.title().unwrap_or("Untitled").to_string(),
+            // Using map for Option<&str> to Option<String> conversion
+            link: item.link().map(ToString::to_string),
+            description: item.description().map(ToString::to_string),
+            pub_date: item.pub_date().map(ToString::to_string),
+            image_url,
+            author: item.author().map(ToString::to_string),
+            formatted_date,
+        }
+    }
+}
+
+fn find_image_in_description(description: &str) -> Option<String> {
+    // Simple regex to extract image URL from HTML
+    if let Some(start_idx) = description.find("<img") {
+        if let Some(src_idx) = description[start_idx..].find("src=\"") {
+            let start = start_idx + src_idx + 5;
+            if let Some(end_idx) = description[start..].find('"') {
+                return Some(description[start..start + end_idx].to_string());
+            }
+        }
+    }
+    None
+}
+
+fn format_date(dt: DateTime<Utc>) -> String {
+    // Calculate how long ago the item was published
+    let now = Utc::now();
+    let diff = now.signed_duration_since(dt);
+
+    if diff.num_minutes() < 60 {
+        format!("{} minutes ago", diff.num_minutes())
+    } else if diff.num_hours() < 24 {
+        format!("{} hours ago", diff.num_hours())
+    } else if diff.num_days() < 7 {
+        format!("{} days ago", diff.num_days())
+    } else {
+        // For older items, show the actual date
+        dt.format("%B %d, %Y").to_string()
     }
 }
