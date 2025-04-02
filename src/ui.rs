@@ -4,12 +4,25 @@ use ratatui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Wrap},
+    symbols,
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Tabs, Wrap},
     Frame,
 };
 
+// Define a consistent color palette
+const PRIMARY_COLOR: Color = Color::Rgb(0, 135, 175); // Cyan-blue
+const SECONDARY_COLOR: Color = Color::Rgb(247, 140, 108); // Coral
+const HIGHLIGHT_COLOR: Color = Color::Rgb(195, 232, 141); // Light green
+const BACKGROUND_COLOR: Color = Color::Rgb(28, 28, 28); // Dark gray
+const TEXT_COLOR: Color = Color::Rgb(220, 220, 220); // Light gray
+const MUTED_COLOR: Color = Color::Rgb(130, 130, 130); // Medium gray
+
 pub fn render<B: Backend>(f: &mut Frame<B>, app: &App) {
+    // Set background color
+    let bg_block = Block::default().style(Style::default().bg(BACKGROUND_COLOR));
+    f.render_widget(bg_block, f.size());
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -30,6 +43,16 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &App) {
     }
 
     render_help_bar(f, app, chunks[2]);
+
+    // Show error if present
+    if let Some(error) = &app.error {
+        render_error_modal(f, error);
+    }
+
+    // Show input modal when in input modes
+    if matches!(app.input_mode, InputMode::InsertUrl | InputMode::SearchMode) {
+        render_input_modal(f, app);
+    }
 }
 
 fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
@@ -43,23 +66,30 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     };
 
     let tabs = Tabs::new(titles.iter().map(|t| Line::from(*t)).collect())
-        .block(Block::default().borders(Borders::ALL))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(PRIMARY_COLOR))
+                .padding(Padding::new(1, 0, 0, 0)),
+        )
+        .style(Style::default().fg(MUTED_COLOR))
         .select(selected_tab)
-        .style(Style::default().fg(Color::Gray))
         .highlight_style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(HIGHLIGHT_COLOR)
                 .add_modifier(Modifier::BOLD),
-        );
+        )
+        .divider(symbols::line::VERTICAL);
 
     f.render_widget(tabs, area);
 }
 
 fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let title = if app.is_searching {
-        format!("Search Results: '{}'", app.search_query)
+        format!(" Search Results: '{}' ", app.search_query)
     } else {
-        "Latest Updates".to_string()
+        " Latest Updates ".to_string()
     };
 
     let items_to_display = if app.is_searching {
@@ -77,8 +107,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
         let paragraph = Paragraph::new(message)
             .alignment(Alignment::Center)
-            .block(Block::default().title(title).borders(Borders::ALL))
-            .style(Style::default().fg(Color::Gray));
+            .block(
+                Block::default()
+                    .title(title)
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .padding(Padding::new(1, 1, 1, 1)),
+            )
+            .style(Style::default().fg(MUTED_COLOR));
 
         f.render_widget(paragraph, area);
         return;
@@ -96,29 +134,43 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
             let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
 
-            let content = Line::from(vec![
-                Span::styled(
-                    format!("{}: ", feed.title),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(&item.title),
-                Span::styled(format!(" ({})", date_str), Style::default().fg(Color::Gray)),
-            ]);
-
-            ListItem::new(content)
+            // Create a formatted list item
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        format!("● {}: ", feed.title),
+                        Style::default()
+                            .fg(SECONDARY_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(&item.title, Style::default().fg(TEXT_COLOR)),
+                ]),
+                Line::from(vec![Span::styled(
+                    format!("  {}", date_str),
+                    Style::default().fg(MUTED_COLOR),
+                )]),
+            ])
+            .style(Style::default().fg(TEXT_COLOR))
         })
         .collect();
 
     let dashboard_list = List::new(items)
-        .block(Block::default().title(title).borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(title)
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(PRIMARY_COLOR))
+                .padding(Padding::new(1, 0, 0, 0)),
+        )
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(Color::Rgb(50, 50, 50))
+                .fg(HIGHLIGHT_COLOR)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol("» ");
+        .highlight_symbol(" → ");
 
     let mut state = ratatui::widgets::ListState::default();
     state.select(app.selected_item);
@@ -130,8 +182,16 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     if app.feeds.is_empty() {
         let paragraph = Paragraph::new("No feeds added. Press 'a' to add a feed.")
             .alignment(Alignment::Center)
-            .block(Block::default().title("Feeds").borders(Borders::ALL))
-            .style(Style::default().fg(Color::Gray));
+            .block(
+                Block::default()
+                    .title(" Feeds ")
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .padding(Padding::new(1, 1, 1, 1)),
+            )
+            .style(Style::default().fg(MUTED_COLOR));
 
         f.render_widget(paragraph, area);
         return;
@@ -141,31 +201,39 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         .feeds
         .iter()
         .map(|feed| {
-            let content = Line::from(vec![
-                Span::styled(
-                    &feed.title,
+            ListItem::new(vec![
+                Line::from(vec![Span::styled(
+                    format!("● {}", feed.title),
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(SECONDARY_COLOR)
                         .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    format!(" ({} items)", feed.items.len()),
-                    Style::default().fg(Color::Gray),
-                ),
-            ]);
-
-            ListItem::new(content)
+                )]),
+                Line::from(vec![Span::styled(
+                    format!("  {} items", feed.items.len()),
+                    Style::default().fg(MUTED_COLOR),
+                )]),
+            ])
+            .style(Style::default().fg(TEXT_COLOR))
         })
         .collect();
 
     let feeds = List::new(feeds)
-        .block(Block::default().title("Feeds").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(" Feeds ")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(PRIMARY_COLOR))
+                .padding(Padding::new(1, 0, 0, 0)),
+        )
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(Color::Rgb(50, 50, 50))
+                .fg(HIGHLIGHT_COLOR)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol("» ");
+        .highlight_symbol(" → ");
 
     let mut state = ratatui::widgets::ListState::default();
     state.select(app.selected_feed);
@@ -175,15 +243,21 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
 fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     if let Some(feed) = app.current_feed() {
+        let title = format!(" {} ", feed.title);
+
         if feed.items.is_empty() {
             let paragraph = Paragraph::new("No items in this feed.")
                 .alignment(Alignment::Center)
                 .block(
                     Block::default()
-                        .title(feed.title.as_str())
-                        .borders(Borders::ALL),
+                        .title(title)
+                        .title_alignment(Alignment::Center)
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(PRIMARY_COLOR))
+                        .padding(Padding::new(1, 1, 1, 1)),
                 )
-                .style(Style::default().fg(Color::Gray));
+                .style(Style::default().fg(MUTED_COLOR));
 
             f.render_widget(paragraph, area);
             return;
@@ -194,42 +268,45 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             .iter()
             .map(|item| {
                 let date_str = item.formatted_date.as_deref().unwrap_or("");
-
-                let content = Line::from(vec![
-                    Span::styled(
-                        &item.title,
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(" "),
-                    Span::styled(format!("({})", date_str), Style::default().fg(Color::Gray)),
-                ]);
+                let author = item.author.as_deref().unwrap_or("");
 
                 ListItem::new(vec![
-                    content,
-                    // Add a subtitle with author if available
-                    if let Some(author) = &item.author {
-                        Line::from(vec![Span::styled(
-                            format!("By: {}", author),
-                            Style::default().fg(Color::Blue),
-                        )])
+                    Line::from(vec![Span::styled(
+                        format!("● {}", item.title),
+                        Style::default()
+                            .fg(HIGHLIGHT_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    )]),
+                    Line::from(vec![if !author.is_empty() {
+                        Span::styled(
+                            format!("  By: {} • {}", author, date_str),
+                            Style::default().fg(MUTED_COLOR),
+                        )
                     } else {
-                        Line::from("")
-                    },
+                        Span::styled(format!("  {}", date_str), Style::default().fg(MUTED_COLOR))
+                    }]),
                 ])
+                .style(Style::default().fg(TEXT_COLOR))
             })
             .collect();
 
-        let feed_title = format!("{} ({})", feed.title, feed.items.len());
         let items_list = List::new(items)
-            .block(Block::default().title(feed_title).borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(title)
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .padding(Padding::new(1, 0, 0, 0)),
+            )
             .highlight_style(
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .bg(Color::Rgb(50, 50, 50))
+                    .fg(HIGHLIGHT_COLOR)
                     .add_modifier(Modifier::BOLD),
             )
-            .highlight_symbol("» ");
+            .highlight_symbol(" → ");
 
         let mut state = ratatui::widgets::ListState::default();
         state.select(app.selected_item);
@@ -244,18 +321,23 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(4), // Header
+                Constraint::Length(5), // Header
                 Constraint::Min(0),    // Content
             ])
             .split(area);
 
         // Create header with title, date, and author
         let mut header_lines = vec![Line::from(vec![
-            Span::styled("Title: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                "Title: ",
+                Style::default()
+                    .fg(SECONDARY_COLOR)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 &item.title,
                 Style::default()
-                    .fg(Color::White)
+                    .fg(HIGHLIGHT_COLOR)
                     .add_modifier(Modifier::BOLD),
             ),
         ])];
@@ -263,36 +345,62 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         // Add publication date if available
         if let Some(date) = &item.formatted_date {
             header_lines.push(Line::from(vec![
-                Span::styled("Date: ", Style::default().fg(Color::Yellow)),
-                Span::raw(date),
+                Span::styled(
+                    "Date: ",
+                    Style::default()
+                        .fg(SECONDARY_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(date, Style::default().fg(TEXT_COLOR)),
             ]));
         }
 
         // Add author if available
         if let Some(author) = &item.author {
             header_lines.push(Line::from(vec![
-                Span::styled("Author: ", Style::default().fg(Color::Yellow)),
-                Span::raw(author),
+                Span::styled(
+                    "Author: ",
+                    Style::default()
+                        .fg(SECONDARY_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(author, Style::default().fg(TEXT_COLOR)),
             ]));
         }
 
         // Add link
         if let Some(link) = &item.link {
             header_lines.push(Line::from(vec![
-                Span::styled("Link: ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "Link: ",
+                    Style::default()
+                        .fg(SECONDARY_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(
                     link,
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(PRIMARY_COLOR)
                         .add_modifier(Modifier::UNDERLINED),
                 ),
-                Span::raw(" (Press 'o' to open in browser)"),
             ]));
+            header_lines.push(Line::from(vec![Span::styled(
+                "Press 'o' to open in browser",
+                Style::default().fg(MUTED_COLOR),
+            )]));
         }
 
         let header = Paragraph::new(header_lines)
-            .block(Block::default().title("Item Details").borders(Borders::ALL))
-            .style(Style::default());
+            .block(
+                Block::default()
+                    .title(" Item Details ")
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .padding(Padding::new(1, 1, 0, 0)),
+            )
+            .style(Style::default().fg(TEXT_COLOR));
 
         f.render_widget(header, chunks[0]);
 
@@ -304,9 +412,17 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         };
 
         let content = Paragraph::new(description)
-            .block(Block::default().title("Content").borders(Borders::ALL))
-            .wrap(Wrap { trim: true })
-            .scroll((0, 0)); // TODO: Add scrolling functionality
+            .block(
+                Block::default()
+                    .title(" Content ")
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .padding(Padding::new(1, 1, 1, 1)),
+            )
+            .style(Style::default().fg(TEXT_COLOR))
+            .wrap(Wrap { trim: true });
 
         f.render_widget(content, chunks[1]);
     }
@@ -316,55 +432,101 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let (msg, style) = match app.input_mode {
         InputMode::Normal => {
             let help_text = match app.view {
-                    View::Dashboard => "f: feeds | a: add feed | r: refresh | enter: view item | o: open link | /: search | q: quit",
-                    View::FeedList => "h/esc: home | a: add feed | d: delete feed | enter: view feed | r: refresh | /: search | q: quit",
-                    View::FeedItems => "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit",
-                    View::FeedItemDetail => "h/esc: back | home: dashboard | o: open in browser | q: quit",
-                };
-            (help_text, Style::default().fg(Color::Gray))
+                View::Dashboard => "f: feeds | a: add feed | r: refresh | enter: view item | o: open link | /: search | q: quit",
+                View::FeedList => "h/esc: home | a: add feed | d: delete feed | enter: view feed | r: refresh | /: search | q: quit",
+                View::FeedItems => "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit",
+                View::FeedItemDetail => "h/esc: back | home: dashboard | o: open in browser | q: quit",
+            };
+            (help_text, Style::default().fg(TEXT_COLOR))
         }
-        InputMode::InsertUrl => (
-            "Enter feed URL (ESC to cancel, Enter to submit)",
-            Style::default().fg(Color::Yellow),
-        ),
-        InputMode::SearchMode => (
-            "Enter search query (ESC to cancel, Enter to search)",
-            Style::default().fg(Color::Yellow),
-        ),
+        InputMode::InsertUrl => ("", Style::default().fg(MUTED_COLOR)),
+        InputMode::SearchMode => ("", Style::default().fg(MUTED_COLOR)),
     };
 
-    // Show input box when in insert or search mode
-    if matches!(app.input_mode, InputMode::InsertUrl | InputMode::SearchMode) {
-        let title = if matches!(app.input_mode, InputMode::InsertUrl) {
-            "Add Feed URL"
-        } else {
-            "Search"
-        };
-
-        let input = Paragraph::new(app.input.as_str())
-            .style(Style::default().fg(Color::Yellow))
-            .block(Block::default().borders(Borders::ALL).title(title));
-        f.render_widget(input, area);
-    } else {
-        // Show help text in normal mode
+    // Only show help bar in normal mode
+    if matches!(app.input_mode, InputMode::Normal) {
         let help = Paragraph::new(msg)
             .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Help"));
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .title(" Help ")
+                    .title_alignment(Alignment::Center),
+            );
         f.render_widget(help, area);
     }
+}
 
-    // Show error if present
-    if let Some(error) = &app.error {
-        let error_area = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3)])
-            .margin(1)
-            .split(f.size())[0];
+fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str) {
+    let area = centered_rect(60, 20, f.size());
 
-        let error_msg = Paragraph::new(error.clone())
-            .style(Style::default().fg(Color::Red))
-            .block(Block::default().borders(Borders::ALL).title("Error"));
+    // Clear the background
+    f.render_widget(Clear, area);
 
-        f.render_widget(error_msg, error_area);
-    }
+    let error_text = Paragraph::new(Text::from(error.to_string()))
+        .style(Style::default().fg(Color::Red))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Red))
+                .title(" Error ")
+                .title_alignment(Alignment::Center)
+                .padding(Padding::new(1, 1, 1, 1)),
+        )
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(error_text, area);
+}
+
+fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let area = centered_rect(60, 20, f.size());
+
+    // Clear the background
+    f.render_widget(Clear, area);
+
+    let title = if matches!(app.input_mode, InputMode::InsertUrl) {
+        " Add Feed URL "
+    } else {
+        " Search "
+    };
+
+    let input = Paragraph::new(app.input.as_str())
+        .style(Style::default().fg(HIGHLIGHT_COLOR))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(PRIMARY_COLOR))
+                .title(title)
+                .title_alignment(Alignment::Center)
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
+
+    f.render_widget(input, area);
+}
+
+// Helper function to create a centered rect using up certain percentage of the available rect
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
