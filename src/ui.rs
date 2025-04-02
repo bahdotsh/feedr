@@ -158,7 +158,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
             lines.join("\n")
         } else if app.feeds.is_empty() {
-            // Enhanced ASCII art with color coding for empty state
+            // Enhanced ASCII art with color coding and interactive suggestions
             let ascii_art = vec![
                 "                                                ",
                 "  ███████╗███████╗███████╗██████╗ ██████╗      ",
@@ -174,10 +174,9 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 "  📚 Get started by adding your favorite RSS feeds",
                 "  🔶 Press 'a' to add a feed URL                 ",
                 "                                                ",
-                "  Some suggestions:                             ",
-                "    • news.ycombinator.com/rss                  ",
-                "    • feeds.feedburner.com/TechCrunch           ",
-                "    • rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+                "  Quick-add suggestions: (press the number key) ",
+                "    1️⃣ news.ycombinator.com/rss                  ",
+                "    2️⃣ feeds.feedburner.com/TechCrunch           ",
             ];
             ascii_art.join("\n")
         } else {
@@ -529,13 +528,23 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             return;
         }
 
-        // Create richly formatted items for the feed
         let items: Vec<ListItem> = feed
             .items
             .iter()
-            .map(|item| {
+            .enumerate() // Add enumeration to know the index
+            .map(|(idx, item)| {
                 let date_str = item.formatted_date.as_deref().unwrap_or("");
                 let author = item.author.as_deref().unwrap_or("");
+
+                // Check if this item is selected
+                let is_selected = app.selected_item.map_or(false, |selected| selected == idx);
+
+                // Choose different styling based on selection state
+                let (title_color, bullet_icon, bullet_color) = if is_selected {
+                    (HIGHLIGHT_COLOR, "► ", PRIMARY_COLOR) // Selected item gets arrow and highlight color
+                } else {
+                    (SECONDARY_COLOR, "● ", MUTED_COLOR) // Normal items get bullet and regular color
+                };
 
                 // Create snippet from description if available
                 let snippet = if let Some(desc) = &item.description {
@@ -549,12 +558,16 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 let mut lines = vec![
                     // Title line with icon
                     Line::from(vec![
-                        Span::styled("● ", Style::default().fg(PRIMARY_COLOR)),
+                        Span::styled(bullet_icon, Style::default().fg(bullet_color)),
                         Span::styled(
                             &item.title,
                             Style::default()
-                                .fg(HIGHLIGHT_COLOR)
-                                .add_modifier(Modifier::BOLD),
+                                .fg(title_color)
+                                .add_modifier(if is_selected {
+                                    Modifier::BOLD
+                                } else {
+                                    Modifier::empty()
+                                }),
                         ),
                     ]),
                 ];
@@ -563,7 +576,7 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 if !snippet.is_empty() {
                     lines.push(Line::from(vec![Span::styled(
                         snippet,
-                        Style::default().fg(TEXT_COLOR),
+                        Style::default().fg(if is_selected { TEXT_COLOR } else { MUTED_COLOR }),
                     )]));
                 }
 
@@ -585,7 +598,11 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
                 lines.push(meta_line);
 
-                ListItem::new(lines).style(Style::default().fg(TEXT_COLOR))
+                ListItem::new(lines).style(Style::default().fg(TEXT_COLOR).bg(if is_selected {
+                    Color::Rgb(59, 66, 82)
+                } else {
+                    BACKGROUND_COLOR
+                }))
             })
             .collect();
 
@@ -605,7 +622,7 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .fg(HIGHLIGHT_COLOR)
                     .add_modifier(Modifier::BOLD),
             )
-            .highlight_symbol(" ► ");
+            .highlight_symbol(""); // We're handling the symbol manually now
 
         let mut state = ratatui::widgets::ListState::default();
         state.select(app.selected_item);

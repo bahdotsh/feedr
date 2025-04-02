@@ -121,6 +121,33 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.input.clear();
                         app.input_mode = InputMode::SearchMode;
                     }
+                    KeyCode::Char('1') => {
+                        if app.feeds.is_empty() {
+                            // Add Hacker News RSS
+                            if let Err(e) = app.add_feed("https://news.ycombinator.com/rss") {
+                                app.error = Some(format!("Failed to add feed: {}", e));
+                            }
+                        }
+                    }
+                    KeyCode::Char('2') => {
+                        if app.feeds.is_empty() {
+                            // Add TechCrunch RSS
+                            if let Err(e) = app.add_feed("https://feeds.feedburner.com/TechCrunch")
+                            {
+                                app.error = Some(format!("Failed to add feed: {}", e));
+                            }
+                        }
+                    }
+                    KeyCode::Char('3') => {
+                        if app.feeds.is_empty() {
+                            // Add NYTimes RSS
+                            if let Err(e) = app.add_feed(
+                                "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+                            ) {
+                                app.error = Some(format!("Failed to add feed: {}", e));
+                            }
+                        }
+                    }
                     KeyCode::Up => {
                         if let Some(selected) = app.selected_item {
                             if selected > 0 {
