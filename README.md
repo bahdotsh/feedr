@@ -98,16 +98,6 @@ feedr
 - **[chrono](https://github.com/chronotope/chrono)**: Date and time handling
 - **[serde](https://github.com/serde-rs/serde)**: Serialization/deserialization
 
-## 📝 Roadmap
-
-- OPML import/export
-- Feed categories and organization
-- Custom color themes
-- Read/unread status tracking
-- Favorite article marking
-- Atom feed support
-- Full-text search
-
 ## 📜 License
 
 MIT
