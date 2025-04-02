@@ -316,11 +316,11 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let (msg, style) = match app.input_mode {
         InputMode::Normal => {
             let help_text = match app.view {
-                View::Dashboard => "h: home | f: feeds | a: add feed | r: refresh | o: open link | /: search | q: quit",
-                View::FeedList => "h: home | a: add feed | d: delete feed | enter: view feed | r: refresh | /: search | q: quit",
-                View::FeedItems => "h: back | enter: view detail | o: open link | /: search | q: quit",
-                View::FeedItemDetail => "h: back | o: open in browser | q: quit",
-            };
+                    View::Dashboard => "f: feeds | a: add feed | r: refresh | enter: view item | o: open link | /: search | q: quit",
+                    View::FeedList => "h/esc: home | a: add feed | d: delete feed | enter: view feed | r: refresh | /: search | q: quit",
+                    View::FeedItems => "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit",
+                    View::FeedItemDetail => "h/esc: back | home: dashboard | o: open in browser | q: quit",
+                };
             (help_text, Style::default().fg(Color::Gray))
         }
         InputMode::InsertUrl => (

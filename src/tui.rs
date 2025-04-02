@@ -106,7 +106,12 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     KeyCode::Enter => {
                         if let Some(selected) = app.selected_item {
-                            if selected < app.dashboard_items.len() {
+                            if app.is_searching && selected < app.filtered_items.len() {
+                                let (feed_idx, item_idx) = app.filtered_items[selected];
+                                app.selected_feed = Some(feed_idx);
+                                app.selected_item = Some(item_idx);
+                                app.view = View::FeedItemDetail;
+                            } else if selected < app.dashboard_items.len() {
                                 let (feed_idx, item_idx) = app.dashboard_items[selected];
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
@@ -134,7 +139,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             app.error = Some(format!("Failed to remove feed: {}", e));
                         }
                     }
-                    KeyCode::Char('h') | KeyCode::Esc => {
+                    KeyCode::Char('h') | KeyCode::Esc | KeyCode::Home => {
                         app.view = View::Dashboard;
                         app.selected_item = None;
                     }
@@ -175,8 +180,12 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 },
                 View::FeedItems => match key.code {
                     KeyCode::Char('q') => return Ok(true),
-                    KeyCode::Esc | KeyCode::Char('h') => {
+                    KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
                         app.view = View::FeedList;
+                        app.selected_item = None;
+                    }
+                    KeyCode::Home => {
+                        app.view = View::Dashboard;
                         app.selected_item = None;
                     }
                     KeyCode::Char('/') => {
@@ -214,13 +223,19 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 },
                 View::FeedItemDetail => match key.code {
                     KeyCode::Char('q') => return Ok(true),
-                    KeyCode::Esc | KeyCode::Char('h') => {
+                    KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
                         if app.is_searching {
-                            app.view = View::Dashboard; // Go back to search results
+                            // Return to search results
+                            app.view = View::Dashboard;
                             app.selected_item = Some(0);
                         } else {
+                            // Return to feed items
                             app.view = View::FeedItems;
                         }
+                    }
+                    KeyCode::Home => {
+                        app.view = View::Dashboard;
+                        app.selected_item = None;
                     }
                     KeyCode::Char('o') => {
                         if let Err(e) = app.open_current_item_in_browser() {
