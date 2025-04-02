@@ -52,24 +52,28 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Res
         if app.error.is_some() {
             if event::poll(Duration::from_millis(3000))? {
                 // An event arrived before the timeout, handle it
-                handle_events(app)?;
+                if handle_events(app)? {
+                    return Ok(()); // Exit the app if handle_events returns true
+                }
             } else {
                 // Timeout expired, clear the error
                 app.error = None;
             }
         } else if event::poll(Duration::from_millis(100))? {
             // No error is displaying, poll for events normally
-            handle_events(app)?;
+            if handle_events(app)? {
+                return Ok(()); // Exit the app if handle_events returns true
+            }
         }
     }
 }
 
-fn handle_events(app: &mut App) -> anyhow::Result<()> {
+fn handle_events(app: &mut App) -> anyhow::Result<bool> {
     if let Event::Key(key) = event::read()? {
         match app.input_mode {
             InputMode::Normal => match app.view {
                 View::FeedList => match key.code {
-                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('q') => return Ok(true),
                     KeyCode::Char('a') => {
                         app.input.clear();
                         app.input_mode = InputMode::InsertUrl;
@@ -106,7 +110,7 @@ fn handle_events(app: &mut App) -> anyhow::Result<()> {
                     _ => {}
                 },
                 View::FeedItems => match key.code {
-                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('q') => return Ok(true),
                     KeyCode::Esc => {
                         app.view = View::FeedList;
                         app.selected_item = None;
@@ -134,7 +138,7 @@ fn handle_events(app: &mut App) -> anyhow::Result<()> {
                     _ => {}
                 },
                 View::FeedItemDetail => match key.code {
-                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('q') => return Ok(true),
                     KeyCode::Esc => {
                         app.view = View::FeedItems;
                     }
@@ -169,5 +173,5 @@ fn handle_events(app: &mut App) -> anyhow::Result<()> {
             },
         }
     }
-    Ok(())
+    Ok(false)
 }
