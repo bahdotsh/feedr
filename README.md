@@ -1,33 +1,27 @@
-# Feedr - Terminal RSS Feed Reader
+# Feedr - Terminal RSS Feed Reader 📰
 
-Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provides a clean and intuitive TUI interface for subscribing to and reading RSS feeds.
+Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provides a clean, intuitive TUI interface for managing and reading RSS feeds with elegant visuals and smooth keyboard navigation.
 
-## Features
+## ✨ Features
 
-- Subscribe to multiple RSS feeds
-- Dashboard view showing the latest items across all feeds
-- Search functionality to find specific content
-- Bookmark feeds for easy access
-- Open links directly in your browser
-- Clean, color-coded interface with keyboard navigation
-- HTML to text conversion for readable content
+- **Dashboard View**: See the latest articles across all your feeds
+- **Feed Management**: Subscribe to and organize multiple RSS feeds
+- **Rich Content Display**: Beautiful formatting of articles with HTML-to-text conversion
+- **Smart Search**: Quickly find content across all your feeds
+- **Browser Integration**: Open articles in your default browser
 
-
-## Installation
+## 🚀 Installation
 
 ### Prerequisites
 
 - Rust and Cargo (install from [https://rustup.rs/](https://rustup.rs/))
-
-The recommended way to install `feedr` is using Rust's package manager, Cargo. Here are several methods:
 
 ### Using Cargo Install (Recommended)
 ```bash
 cargo install feedr
 ```
 
-### Build from source
-
+### Build from Source
 ```bash
 git clone https://github.com/bahdotsh/feedr.git
 cd feedr
@@ -36,66 +30,100 @@ cargo build --release
 
 The binary will be available at `target/release/feedr`.
 
-## Usage
+## 🎮 Usage
 
-Run the application with:
+Run the application:
 
 ```bash
-./target/release/feedr
+feedr
 ```
+
+### Quick Start
+1. When you open Feedr for the first time, press `a` to add a feed
+2. Enter a valid RSS feed URL (e.g., `https://news.ycombinator.com/rss`)
+3. Use arrow keys to navigate and `Enter` to view items
+4. Press `o` to open the current article in your browser
 
 ### Keyboard Controls
 
+#### General Navigation
+| Key | Action |
+|-----|--------|
+| `Tab` | Cycle between views |
+| `q` | Quit application |
+| `r` | Refresh all feeds |
+| `/` | Search mode |
+
 #### Dashboard View
-- `f`: Go to feeds list
-- `a`: Add a new feed
-- `r`: Refresh all feeds
-- `Enter`: View selected item
-- `o`: Open link in browser
-- `/`: Search
-- `q`: Quit
+| Key | Action |
+|-----|--------|
+| `f` | Go to feeds list |
+| `a` | Add a new feed |
+| `↑/↓` | Navigate items |
+| `Enter` | View selected item |
+| `o` | Open link in browser |
 
 #### Feed List View
-- `h/Esc`: Go to dashboard
-- `a`: Add a new feed
-- `d`: Delete selected feed
-- `Enter`: View feed items
-- `r`: Refresh feeds
-- `/`: Search
-- `q`: Quit
+| Key | Action |
+|-----|--------|
+| `h` / `Esc` | Go to dashboard |
+| `a` | Add a new feed |
+| `d` | Delete selected feed |
+| `↑/↓` | Navigate feeds |
+| `Enter` | View feed items |
 
 #### Feed Items View
-- `h/Esc`: Back to feeds list
-- `Home`: Go to dashboard
-- `Enter`: View item details
-- `o`: Open item in browser
-- `/`: Search
-- `q`: Quit
+| Key | Action |
+|-----|--------|
+| `h` / `Esc` | Back to feeds list |
+| `Home` | Go to dashboard |
+| `↑/↓` | Navigate items |
+| `Enter` | View item details |
+| `o` | Open item in browser |
 
 #### Item Detail View
-- `h/Esc`: Back to feed items
-- `Home`: Go to dashboard
-- `o`: Open item in browser
-- `q`: Quit
+| Key | Action |
+|-----|--------|
+| `h` / `Esc` | Back to feed items |
+| `Home` | Go to dashboard |
+| `o` | Open item in browser |
 
-## Configuration
+## ⚙️ Configuration
 
-Feedr saves your bookmarked feeds to `~/.local/share/feedr/bookmarks.json` on Linux/macOS or to the appropriate application data directory on Windows.
+Feedr saves your bookmarked feeds automatically to:
+- Linux/macOS: `~/.local/share/feedr/bookmarks.json`
+- Windows: `%APPDATA%\feedr\bookmarks.json`
 
-## Dependencies
+## 🧩 Dependencies
 
-- ratatui: Terminal UI library
-- crossterm: Terminal manipulation
-- reqwest: HTTP client
-- rss: RSS parsing
-- html2text: HTML to text conversion
-- chrono: Date and time handling
-- serde: Serialization/deserialization
+- **[ratatui](https://github.com/ratatui-org/ratatui)**: Terminal UI framework
+- **[crossterm](https://github.com/crossterm-rs/crossterm)**: Terminal manipulation
+- **[reqwest](https://github.com/seanmonstar/reqwest)**: HTTP client
+- **[rss](https://github.com/rust-syndication/rss)**: RSS parsing
+- **[html2text](https://github.com/servo/html5ever)**: HTML to text conversion
+- **[chrono](https://github.com/chronotope/chrono)**: Date and time handling
+- **[serde](https://github.com/serde-rs/serde)**: Serialization/deserialization
 
-## License
+## 📝 Roadmap
+
+- OPML import/export
+- Feed categories and organization
+- Custom color themes
+- Read/unread status tracking
+- Favorite article marking
+- Atom feed support
+- Full-text search
+
+## 📜 License
 
 MIT
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
