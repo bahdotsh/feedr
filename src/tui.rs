@@ -71,41 +71,18 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 View::Dashboard => match key.code {
                     KeyCode::Char('q') => return Ok(true),
                     KeyCode::Tab => {
-                        // Cycle through views when Tab is pressed
-                        app.view = match app.view {
-                            View::Dashboard => View::FeedList,
-                            View::FeedList => {
-                                if app.selected_feed.is_some() {
-                                    app.selected_item = Some(0);
-                                    View::FeedItems
-                                } else {
-                                    View::Dashboard
-                                }
+                        // Check if shift modifier is pressed
+                        if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                            // With Shift+Tab, go from Feeds to Dashboard
+                            if matches!(app.view, View::FeedList) {
+                                app.view = View::Dashboard;
                             }
-                            View::FeedItems => {
-                                if app.selected_item.is_some() {
-                                    View::FeedItemDetail
-                                } else {
-                                    View::Dashboard
-                                }
+                        } else {
+                            // With Tab, go from Dashboard to Feeds
+                            if matches!(app.view, View::Dashboard) {
+                                app.view = View::FeedList;
                             }
-                            View::FeedItemDetail => View::Dashboard,
-                        };
-                    }
-                    KeyCode::BackTab => {
-                        // Reverse cycle through views with Shift+Tab
-                        app.view = match app.view {
-                            View::Dashboard => View::FeedItemDetail,
-                            View::FeedList => View::Dashboard,
-                            View::FeedItems => View::FeedList,
-                            View::FeedItemDetail => {
-                                if app.selected_item.is_some() {
-                                    View::FeedItems
-                                } else {
-                                    View::Dashboard
-                                }
-                            }
-                        };
+                        }
                     }
                     KeyCode::Char('a') => {
                         app.input.clear();
@@ -167,6 +144,9 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 },
                 View::FeedList => match key.code {
                     KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Tab => {
+                        app.view = View::Dashboard;
+                    }
                     KeyCode::Char('a') => {
                         app.input.clear();
                         app.input_mode = InputMode::InsertUrl;
