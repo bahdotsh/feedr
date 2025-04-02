@@ -101,8 +101,24 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     if items_to_display.is_empty() {
         let message = if app.is_searching {
             format!("No results found for '{}'", app.search_query)
+        } else if app.feeds.is_empty() {
+            // Show ASCII art for empty state
+            let ascii_art = vec![
+                "  ███████╗███████╗███████╗██████╗ ██████╗  ",
+                "  ██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗ ",
+                "  █████╗  █████╗  █████╗  ██║  ██║██████╔╝ ",
+                "  ██╔══╝  ██╔══╝  ██╔══╝  ██║  ██║██╔══██╗ ",
+                "  ██║     ███████╗███████╗██████╔╝██║  ██║ ",
+                "  ╚═╝     ╚══════╝╚══════╝╚═════╝ ╚═╝  ╚═╝ ",
+                "                                           ",
+                "  Welcome to Feedr - Your Terminal RSS Reader ",
+                " -------------------------------------------- ",
+                "  Get started by adding your favorite RSS feeds",
+                "  Press 'a' to add a feed URL",
+            ];
+            ascii_art.join("\n")
         } else {
-            "No recent items. Add feeds with 'a' or refresh with 'r'".to_string()
+            "No recent items. Refresh with 'r' to update.".to_string()
         };
 
         let paragraph = Paragraph::new(message)
@@ -116,7 +132,11 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .border_style(Style::default().fg(PRIMARY_COLOR))
                     .padding(Padding::new(1, 1, 1, 1)),
             )
-            .style(Style::default().fg(MUTED_COLOR));
+            .style(Style::default().fg(if app.feeds.is_empty() {
+                HIGHLIGHT_COLOR
+            } else {
+                MUTED_COLOR
+            }));
 
         f.render_widget(paragraph, area);
         return;
@@ -180,7 +200,23 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
 fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     if app.feeds.is_empty() {
-        let paragraph = Paragraph::new("No feeds added. Press 'a' to add a feed.")
+        // ASCII art for empty feeds
+        let ascii_art = vec![
+            "                                           ",
+            "       .--.                                ",
+            "      |o_o |                               ",
+            "      |:_/ |                               ",
+            "     //   \\ \\                              ",
+            "    (|     | )                             ",
+            "   /'\\_   _/`\\                            ",
+            "   \\___)=(___/                            ",
+            "                                           ",
+            "  No feeds added yet!                      ",
+            "                                           ",
+            "  Press 'a' to add a feed                  ",
+        ];
+
+        let paragraph = Paragraph::new(ascii_art.join("\n"))
             .alignment(Alignment::Center)
             .block(
                 Block::default()
@@ -191,7 +227,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .border_style(Style::default().fg(PRIMARY_COLOR))
                     .padding(Padding::new(1, 1, 1, 1)),
             )
-            .style(Style::default().fg(MUTED_COLOR));
+            .style(Style::default().fg(HIGHLIGHT_COLOR));
 
         f.render_widget(paragraph, area);
         return;
