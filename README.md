@@ -88,12 +88,6 @@ feedr
 | `Home` | Go to dashboard |
 | `o` | Open item in browser |
 
-## ⚙️ Configuration
-
-Feedr saves your bookmarked feeds automatically to:
-- Linux/macOS: `~/.local/share/feedr/bookmarks.json`
-- Windows: `%APPDATA%\feedr\bookmarks.json`
-
 ## 🧩 Dependencies
 
 - **[ratatui](https://github.com/ratatui-org/ratatui)**: Terminal UI framework
