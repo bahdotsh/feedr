@@ -2,6 +2,13 @@
 name = "feedr"
 version = "0.1.0"
 edition = "2021"
+description = "Feedr is a feature-rich terminal-based RSS feed reader written in Rust."
+documentation = "https://github.com/bahdotsh/feedr"
+homepage = "https://github.com/bahdotsh/feedr"
+repository = "https://github.com/bahdotsh/feedr"
+keywords = ["rss", "feed-reader", "terminal", "tui", "cli"]
+categories = ["command-line-utilities", "text-processing", "web-programming"]
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
