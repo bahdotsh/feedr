@@ -70,6 +70,43 @@ fn handle_events(app: &mut App) -> Result<bool> {
             InputMode::Normal => match app.view {
                 View::Dashboard => match key.code {
                     KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Tab => {
+                        // Cycle through views when Tab is pressed
+                        app.view = match app.view {
+                            View::Dashboard => View::FeedList,
+                            View::FeedList => {
+                                if app.selected_feed.is_some() {
+                                    app.selected_item = Some(0);
+                                    View::FeedItems
+                                } else {
+                                    View::Dashboard
+                                }
+                            }
+                            View::FeedItems => {
+                                if app.selected_item.is_some() {
+                                    View::FeedItemDetail
+                                } else {
+                                    View::Dashboard
+                                }
+                            }
+                            View::FeedItemDetail => View::Dashboard,
+                        };
+                    }
+                    KeyCode::BackTab => {
+                        // Reverse cycle through views with Shift+Tab
+                        app.view = match app.view {
+                            View::Dashboard => View::FeedItemDetail,
+                            View::FeedList => View::Dashboard,
+                            View::FeedItems => View::FeedList,
+                            View::FeedItemDetail => {
+                                if app.selected_item.is_some() {
+                                    View::FeedItems
+                                } else {
+                                    View::Dashboard
+                                }
+                            }
+                        };
+                    }
                     KeyCode::Char('a') => {
                         app.input.clear();
                         app.input_mode = InputMode::InsertUrl;
