@@ -14,7 +14,7 @@ pub enum InputMode {
 
 #[derive(Clone, Debug)]
 pub enum View {
-    Dashboard, // New dashboard view with latest updates
+    Dashboard,
     FeedList,
     FeedItems,
     FeedItemDetail,
