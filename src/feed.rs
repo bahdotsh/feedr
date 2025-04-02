@@ -7,8 +7,6 @@ use std::time::Duration;
 pub struct Feed {
     pub url: String,
     pub title: String,
-    pub description: Option<String>,
-    pub image_url: Option<String>,
     pub items: Vec<FeedItem>,
 }
 
@@ -18,7 +16,6 @@ pub struct FeedItem {
     pub link: Option<String>,
     pub description: Option<String>,
     pub pub_date: Option<String>,
-    pub image_url: Option<String>,
     pub author: Option<String>,
     pub formatted_date: Option<String>,
 }
@@ -44,8 +41,6 @@ impl Feed {
         Ok(Feed {
             url: url.to_string(),
             title: channel.title().to_string(),
-            description: Some(channel.description().to_string()),
-            image_url: channel.image().map(|img| img.url().to_string()),
             items,
         })
     }
@@ -53,8 +48,6 @@ impl Feed {
 
 impl FeedItem {
     fn from_rss_item(item: &Item) -> Self {
-        let image_url = find_image_in_description(item.description().unwrap_or(""));
-
         // Format the date for better display
         let formatted_date = item.pub_date().and_then(|date_str| {
             DateTime::parse_from_rfc2822(date_str)
@@ -68,24 +61,10 @@ impl FeedItem {
             link: item.link().map(ToString::to_string),
             description: item.description().map(ToString::to_string),
             pub_date: item.pub_date().map(ToString::to_string),
-            image_url,
             author: item.author().map(ToString::to_string),
             formatted_date,
         }
     }
-}
-
-fn find_image_in_description(description: &str) -> Option<String> {
-    // Simple regex to extract image URL from HTML
-    if let Some(start_idx) = description.find("<img") {
-        if let Some(src_idx) = description[start_idx..].find("src=\"") {
-            let start = start_idx + src_idx + 5;
-            if let Some(end_idx) = description[start..].find('"') {
-                return Some(description[start..start + end_idx].to_string());
-            }
-        }
-    }
-    None
 }
 
 fn format_date(dt: DateTime<Utc>) -> String {
