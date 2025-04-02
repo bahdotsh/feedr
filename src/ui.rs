@@ -4,30 +4,42 @@ use ratatui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    symbols,
+    symbols::{self},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Tabs, Wrap},
+    widgets::{
+        canvas::{Canvas, Rectangle},
+        Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Tabs, Wrap,
+    },
     Frame,
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-// Define a consistent color palette
-const PRIMARY_COLOR: Color = Color::Rgb(0, 135, 175); // Cyan-blue
-const SECONDARY_COLOR: Color = Color::Rgb(247, 140, 108); // Coral
-const HIGHLIGHT_COLOR: Color = Color::Rgb(195, 232, 141); // Light green
-const BACKGROUND_COLOR: Color = Color::Rgb(28, 28, 28); // Dark gray
-const TEXT_COLOR: Color = Color::Rgb(220, 220, 220); // Light gray
-const MUTED_COLOR: Color = Color::Rgb(130, 130, 130); // Medium gray
+// Define a refined color palette inspired by modern terminal themes
+const PRIMARY_COLOR: Color = Color::Rgb(129, 161, 193); // Soft blue
+const SECONDARY_COLOR: Color = Color::Rgb(180, 142, 173); // Lavender
+const HIGHLIGHT_COLOR: Color = Color::Rgb(163, 190, 140); // Soft green
+const BACKGROUND_COLOR: Color = Color::Rgb(46, 52, 64); // Dark blue-gray
+const TEXT_COLOR: Color = Color::Rgb(236, 239, 244); // Off-white
+const MUTED_COLOR: Color = Color::Rgb(129, 139, 153); // Steel blue
+const ACCENT_COLOR: Color = Color::Rgb(208, 135, 112); // Soft orange
+const ERROR_COLOR: Color = Color::Rgb(191, 97, 106); // Soft red
+const BORDER_COLOR: Color = Color::Rgb(76, 86, 106); // Slate blue
+
+// Border styles
+const NORMAL_BORDER: BorderType = BorderType::Rounded;
+const ACTIVE_BORDER: BorderType = BorderType::Thick;
 
 pub fn render<B: Backend>(f: &mut Frame<B>, app: &App) {
-    // Set background color
+    // Set background color for the entire terminal
     let bg_block = Block::default().style(Style::default().bg(BACKGROUND_COLOR));
     f.render_widget(bg_block, f.size());
 
+    // Main layout division
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
-            Constraint::Length(3), // Title bar
+            Constraint::Length(3), // Title/tab bar
             Constraint::Min(0),    // Main content
             Constraint::Length(3), // Help bar
         ])
@@ -65,43 +77,64 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         View::FeedItemDetail => 3,
     };
 
-    // Loading animation characters
-    let loading_symbols = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    // Loading animation characters - smoother spinner
+    let loading_symbols = ["◐", "◓", "◑", "◒"];
 
     // Create title with loading indicator if loading
     let title = if app.is_loading {
-        format!(" {} Loading... ", loading_symbols[app.loading_indicator])
+        format!(
+            " {} Loading... ",
+            loading_symbols[app.loading_indicator % 4]
+        )
     } else {
-        " Feedr ".to_string()
+        " 📰 Feedr ".to_string()
     };
 
-    let tabs = Tabs::new(titles.iter().map(|t| Line::from(*t)).collect())
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(PRIMARY_COLOR))
-                .title(title)
-                .title_alignment(Alignment::Center)
-                .padding(Padding::new(1, 0, 0, 0)),
-        )
-        .style(Style::default().fg(MUTED_COLOR))
-        .select(selected_tab)
-        .highlight_style(
-            Style::default()
-                .fg(HIGHLIGHT_COLOR)
-                .add_modifier(Modifier::BOLD),
-        )
-        .divider(symbols::line::VERTICAL);
+    // Create tab highlight effect
+    let tabs = Tabs::new(
+        titles
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let prefix = if i == selected_tab { "▪ " } else { "  " };
+                Line::from(vec![Span::styled(
+                    format!("{}{}", prefix, t),
+                    if i == selected_tab {
+                        Style::default()
+                            .fg(HIGHLIGHT_COLOR)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(MUTED_COLOR)
+                    },
+                )])
+            })
+            .collect(),
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(if app.is_loading {
+                ACTIVE_BORDER
+            } else {
+                NORMAL_BORDER
+            })
+            .border_style(Style::default().fg(PRIMARY_COLOR))
+            .title(title)
+            .title_alignment(Alignment::Center)
+            .padding(Padding::new(1, 0, 0, 0)),
+    )
+    .style(Style::default().fg(MUTED_COLOR))
+    .select(selected_tab)
+    .divider(symbols::line::VERTICAL);
 
     f.render_widget(tabs, area);
 }
 
 fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let title = if app.is_searching {
-        format!(" Search Results: '{}' ", app.search_query)
+        format!(" 🔍 Search Results: '{}' ", app.search_query)
     } else {
-        " Latest Updates ".to_string()
+        " 🔔 Latest Updates ".to_string()
     };
 
     let items_to_display = if app.is_searching {
@@ -112,48 +145,140 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
     if items_to_display.is_empty() {
         let message = if app.is_searching {
-            format!("No results found for '{}'", app.search_query)
+            let no_results = format!("No results found for '{}'", app.search_query);
+
+            // Create a visually appealing empty search results screen
+            let mut lines = Vec::new();
+            lines.push("");
+            lines.push("       🔍       ");
+            lines.push("");
+            lines.push(&no_results);
+            lines.push("");
+            lines.push("Try different keywords or add more feeds");
+
+            lines.join("\n")
         } else if app.feeds.is_empty() {
-            // Show ASCII art for empty state
+            // Enhanced ASCII art with color coding for empty state
             let ascii_art = vec![
-                "  ███████╗███████╗███████╗██████╗ ██████╗  ",
-                "  ██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗ ",
-                "  █████╗  █████╗  █████╗  ██║  ██║██████╔╝ ",
-                "  ██╔══╝  ██╔══╝  ██╔══╝  ██║  ██║██╔══██╗ ",
-                "  ██║     ███████╗███████╗██████╔╝██║  ██║ ",
-                "  ╚═╝     ╚══════╝╚══════╝╚═════╝ ╚═╝  ╚═╝ ",
-                "                                           ",
-                "  Welcome to Feedr - Your Terminal RSS Reader ",
-                " -------------------------------------------- ",
-                "  Get started by adding your favorite RSS feeds",
-                "  Press 'a' to add a feed URL",
+                "                                                ",
+                "  ███████╗███████╗███████╗██████╗ ██████╗      ",
+                "  ██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗     ",
+                "  █████╗  █████╗  █████╗  ██║  ██║██████╔╝     ",
+                "  ██╔══╝  ██╔══╝  ██╔══╝  ██║  ██║██╔══██╗     ",
+                "  ██║     ███████╗███████╗██████╔╝██║  ██║     ",
+                "  ╚═╝     ╚══════╝╚══════╝╚═════╝ ╚═╝  ╚═╝     ",
+                "                                                ",
+                "  Welcome to Feedr - Your Terminal RSS Reader   ",
+                " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ",
+                "                                                ",
+                "  📚 Get started by adding your favorite RSS feeds",
+                "  🔶 Press 'a' to add a feed URL                 ",
+                "                                                ",
+                "  Some suggestions:                             ",
+                "    • news.ycombinator.com/rss                  ",
+                "    • feeds.feedburner.com/TechCrunch           ",
+                "    • rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
             ];
             ascii_art.join("\n")
         } else {
-            "No recent items. Refresh with 'r' to update.".to_string()
+            let empty_msg = vec![
+                "",
+                "       📭       ",
+                "",
+                "No recent items",
+                "",
+                "Refresh with 'r' to update",
+                "",
+            ];
+            empty_msg.join("\n")
         };
 
-        let paragraph = Paragraph::new(message)
-            .alignment(Alignment::Center)
-            .block(
-                Block::default()
-                    .title(title)
-                    .title_alignment(Alignment::Center)
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(PRIMARY_COLOR))
-                    .padding(Padding::new(1, 1, 1, 1)),
-            )
-            .style(Style::default().fg(if app.feeds.is_empty() {
-                HIGHLIGHT_COLOR
-            } else {
-                MUTED_COLOR
-            }));
+        // Rich text for empty dashboard
+        let mut text = Text::default();
+
+        if app.feeds.is_empty() && !app.is_searching {
+            // For welcome screen
+            for line in message.lines() {
+                if line.contains("Welcome") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default()
+                            .fg(ACCENT_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    )]));
+                } else if line.contains("Press") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(HIGHLIGHT_COLOR),
+                    )]));
+                } else if line.contains("Some suggestions") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default()
+                            .fg(SECONDARY_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    )]));
+                } else if line.contains("•") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(PRIMARY_COLOR),
+                    )]));
+                } else if line.contains("Get started") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(TEXT_COLOR),
+                    )]));
+                } else if line.contains("━") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(BORDER_COLOR),
+                    )]));
+                } else if line.contains("███") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(PRIMARY_COLOR),
+                    )]));
+                } else {
+                    text.lines.push(Line::from(line));
+                }
+            }
+        } else {
+            // For empty search or empty dashboard
+            for line in message.lines() {
+                if line.contains("🔍") || line.contains("📭") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(SECONDARY_COLOR),
+                    )]));
+                } else if line.contains("No results") || line.contains("No recent") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+                    )]));
+                } else {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(MUTED_COLOR),
+                    )]));
+                }
+            }
+        }
+
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .title(title)
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(NORMAL_BORDER)
+                .border_style(Style::default().fg(PRIMARY_COLOR))
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
 
         f.render_widget(paragraph, area);
         return;
     }
 
+    // For non-empty dashboard, create richly formatted items
     let items: Vec<ListItem> = items_to_display
         .iter()
         .enumerate()
@@ -166,8 +291,9 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
             let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
 
-            // Create a formatted list item
+            // Create a visually engaging list item
             ListItem::new(vec![
+                // Title line with feed prefix
                 Line::from(vec![
                     Span::styled(
                         format!("● {}: ", feed.title),
@@ -177,10 +303,11 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     ),
                     Span::styled(&item.title, Style::default().fg(TEXT_COLOR)),
                 ]),
-                Line::from(vec![Span::styled(
-                    format!("  {}", date_str),
-                    Style::default().fg(MUTED_COLOR),
-                )]),
+                // Date line with visual spacer
+                Line::from(vec![
+                    Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
+                    Span::styled(format!("{}", date_str), Style::default().fg(MUTED_COLOR)),
+                ]),
             ])
             .style(Style::default().fg(TEXT_COLOR))
         })
@@ -192,17 +319,17 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 .title(title)
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_type(NORMAL_BORDER)
                 .border_style(Style::default().fg(PRIMARY_COLOR))
                 .padding(Padding::new(1, 0, 0, 0)),
         )
         .highlight_style(
             Style::default()
-                .bg(Color::Rgb(50, 50, 50))
+                .bg(Color::Rgb(59, 66, 82)) // Slightly lighter than background
                 .fg(HIGHLIGHT_COLOR)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(" → ");
+        .highlight_symbol(" ► ");
 
     let mut state = ratatui::widgets::ListState::default();
     state.select(app.selected_item);
@@ -212,54 +339,124 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
 fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     if app.feeds.is_empty() {
-        // ASCII art for empty feeds
-        let ascii_art = vec![
-            "                                           ",
-            "       .--.                                ",
-            "      |o_o |                               ",
-            "      |:_/ |                               ",
-            "     //   \\ \\                              ",
-            "    (|     | )                             ",
-            "   /'\\_   _/`\\                            ",
-            "   \\___)=(___/                            ",
-            "                                           ",
-            "  No feeds added yet!                      ",
-            "                                           ",
-            "  Press 'a' to add a feed                  ",
-        ];
+        // Enhanced ASCII art for empty feeds
+        let mut text = Text::default();
 
-        let paragraph = Paragraph::new(ascii_art.join("\n"))
-            .alignment(Alignment::Center)
-            .block(
-                Block::default()
-                    .title(" Feeds ")
-                    .title_alignment(Alignment::Center)
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(PRIMARY_COLOR))
-                    .padding(Padding::new(1, 1, 1, 1)),
-            )
-            .style(Style::default().fg(HIGHLIGHT_COLOR));
+        // Stylized ASCII robot
+        text.lines.push(Line::from(Span::styled(
+            "                                           ",
+            Style::default().fg(MUTED_COLOR),
+        )));
+        text.lines.push(Line::from(Span::styled(
+            "       .---.                               ",
+            Style::default().fg(PRIMARY_COLOR),
+        )));
+        text.lines.push(Line::from(vec![
+            Span::styled("      |", Style::default().fg(PRIMARY_COLOR)),
+            Span::styled("o_o", Style::default().fg(ACCENT_COLOR)),
+            Span::styled(
+                " |                              ",
+                Style::default().fg(PRIMARY_COLOR),
+            ),
+        ]));
+        text.lines.push(Line::from(vec![
+            Span::styled("      |", Style::default().fg(PRIMARY_COLOR)),
+            Span::styled(":_/", Style::default().fg(SECONDARY_COLOR)),
+            Span::styled(
+                " |                              ",
+                Style::default().fg(PRIMARY_COLOR),
+            ),
+        ]));
+        text.lines.push(Line::from(Span::styled(
+            "     //   \\ \\                             ",
+            Style::default().fg(PRIMARY_COLOR),
+        )));
+        text.lines.push(Line::from(Span::styled(
+            "    (|     | )                            ",
+            Style::default().fg(PRIMARY_COLOR),
+        )));
+        text.lines.push(Line::from(Span::styled(
+            "   /'\\_   _/`\\                           ",
+            Style::default().fg(PRIMARY_COLOR),
+        )));
+        text.lines.push(Line::from(Span::styled(
+            "   \\___)=(___/                           ",
+            Style::default().fg(PRIMARY_COLOR),
+        )));
+        text.lines.push(Line::from(Span::styled(
+            "                                           ",
+            Style::default().fg(MUTED_COLOR),
+        )));
+
+        // Help message
+        text.lines.push(Line::from(Span::styled(
+            "  No feeds added yet!                      ",
+            Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+        )));
+        text.lines.push(Line::from(Span::styled(
+            "                                           ",
+            Style::default().fg(MUTED_COLOR),
+        )));
+        text.lines.push(Line::from(Span::styled(
+            "  Press 'a' to add a feed                  ",
+            Style::default().fg(HIGHLIGHT_COLOR),
+        )));
+
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .title(" 📋 Feeds ")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(NORMAL_BORDER)
+                .border_style(Style::default().fg(PRIMARY_COLOR))
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
 
         f.render_widget(paragraph, area);
         return;
     }
 
+    // For non-empty feed list, create visually rich items
     let feeds: Vec<ListItem> = app
         .feeds
         .iter()
         .map(|feed| {
+            // Create badges to visualize item counts
+            let item_count = feed.items.len();
+            let count_style = if item_count > 50 {
+                Style::default()
+                    .fg(HIGHLIGHT_COLOR)
+                    .bg(Color::Rgb(59, 66, 82))
+            } else if item_count > 20 {
+                Style::default().fg(ACCENT_COLOR).bg(Color::Rgb(59, 66, 82))
+            } else {
+                Style::default().fg(MUTED_COLOR).bg(Color::Rgb(59, 66, 82))
+            };
+
+            let count_badge = format!(" {} items ", item_count);
+
             ListItem::new(vec![
-                Line::from(vec![Span::styled(
-                    format!("● {}", feed.title),
-                    Style::default()
-                        .fg(SECONDARY_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(vec![Span::styled(
-                    format!("  {} items", feed.items.len()),
-                    Style::default().fg(MUTED_COLOR),
-                )]),
+                // Title with icon
+                Line::from(vec![
+                    Span::styled("● ", Style::default().fg(PRIMARY_COLOR)),
+                    Span::styled(
+                        &feed.title,
+                        Style::default()
+                            .fg(SECONDARY_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                // Stats line with badge
+                Line::from(vec![
+                    Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
+                    Span::styled(count_badge, count_style.add_modifier(Modifier::BOLD)),
+                    Span::styled(" ", Style::default().fg(MUTED_COLOR)),
+                    // Simple URL indicator
+                    Span::styled(
+                        format!("({})", truncate_url(&feed.url, 30)),
+                        Style::default().fg(MUTED_COLOR),
+                    ),
+                ]),
             ])
             .style(Style::default().fg(TEXT_COLOR))
         })
@@ -268,20 +465,20 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let feeds = List::new(feeds)
         .block(
             Block::default()
-                .title(" Feeds ")
+                .title(" 📋 Feeds ")
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_type(NORMAL_BORDER)
                 .border_style(Style::default().fg(PRIMARY_COLOR))
                 .padding(Padding::new(1, 0, 0, 0)),
         )
         .highlight_style(
             Style::default()
-                .bg(Color::Rgb(50, 50, 50))
+                .bg(Color::Rgb(59, 66, 82))
                 .fg(HIGHLIGHT_COLOR)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(" → ");
+        .highlight_symbol(" ► ");
 
     let mut state = ratatui::widgets::ListState::default();
     state.select(app.selected_feed);
@@ -291,26 +488,48 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
 fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     if let Some(feed) = app.current_feed() {
-        let title = format!(" {} ", feed.title);
+        let title = format!(" 📰 {} ", feed.title);
 
         if feed.items.is_empty() {
-            let paragraph = Paragraph::new("No items in this feed.")
-                .alignment(Alignment::Center)
-                .block(
-                    Block::default()
-                        .title(title)
-                        .title_alignment(Alignment::Center)
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(PRIMARY_COLOR))
-                        .padding(Padding::new(1, 1, 1, 1)),
-                )
-                .style(Style::default().fg(MUTED_COLOR));
+            // Empty feed visualization
+            let mut text = Text::default();
+
+            text.lines.push(Line::from(""));
+            text.lines.push(Line::from(Span::styled(
+                "       📭       ",
+                Style::default().fg(SECONDARY_COLOR),
+            )));
+            text.lines.push(Line::from(""));
+            text.lines.push(Line::from(Span::styled(
+                "No items in this feed",
+                Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+            )));
+            text.lines.push(Line::from(""));
+            text.lines.push(Line::from(Span::styled(
+                "This feed might be empty or need refreshing",
+                Style::default().fg(MUTED_COLOR),
+            )));
+            text.lines.push(Line::from(""));
+            text.lines.push(Line::from(Span::styled(
+                "Press 'r' to refresh feeds",
+                Style::default().fg(HIGHLIGHT_COLOR),
+            )));
+
+            let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+                Block::default()
+                    .title(title)
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(NORMAL_BORDER)
+                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .padding(Padding::new(1, 1, 1, 1)),
+            );
 
             f.render_widget(paragraph, area);
             return;
         }
 
+        // Create richly formatted items for the feed
         let items: Vec<ListItem> = feed
             .items
             .iter()
@@ -318,23 +537,55 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 let date_str = item.formatted_date.as_deref().unwrap_or("");
                 let author = item.author.as_deref().unwrap_or("");
 
-                ListItem::new(vec![
-                    Line::from(vec![Span::styled(
-                        format!("● {}", item.title),
-                        Style::default()
-                            .fg(HIGHLIGHT_COLOR)
-                            .add_modifier(Modifier::BOLD),
-                    )]),
-                    Line::from(vec![if !author.is_empty() {
+                // Create snippet from description if available
+                let snippet = if let Some(desc) = &item.description {
+                    let plain_text = html2text::from_read(desc.as_bytes(), 50);
+                    let snippet = truncate_str(&plain_text, 70);
+                    format!("  │ {}", snippet)
+                } else {
+                    "".to_string()
+                };
+
+                let mut lines = vec![
+                    // Title line with icon
+                    Line::from(vec![
+                        Span::styled("● ", Style::default().fg(PRIMARY_COLOR)),
                         Span::styled(
-                            format!("  By: {} • {}", author, date_str),
+                            &item.title,
+                            Style::default()
+                                .fg(HIGHLIGHT_COLOR)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                ];
+
+                // Add content snippet if available
+                if !snippet.is_empty() {
+                    lines.push(Line::from(vec![Span::styled(
+                        snippet,
+                        Style::default().fg(TEXT_COLOR),
+                    )]));
+                }
+
+                // Add metadata line
+                let meta_line = if !author.is_empty() {
+                    Line::from(vec![
+                        Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
+                        Span::styled(
+                            format!("By: {} • {}", author, date_str),
                             Style::default().fg(MUTED_COLOR),
-                        )
-                    } else {
-                        Span::styled(format!("  {}", date_str), Style::default().fg(MUTED_COLOR))
-                    }]),
-                ])
-                .style(Style::default().fg(TEXT_COLOR))
+                        ),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
+                        Span::styled(date_str, Style::default().fg(MUTED_COLOR)),
+                    ])
+                };
+
+                lines.push(meta_line);
+
+                ListItem::new(lines).style(Style::default().fg(TEXT_COLOR))
             })
             .collect();
 
@@ -344,17 +595,17 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .title(title)
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
+                    .border_type(NORMAL_BORDER)
                     .border_style(Style::default().fg(PRIMARY_COLOR))
                     .padding(Padding::new(1, 0, 0, 0)),
             )
             .highlight_style(
                 Style::default()
-                    .bg(Color::Rgb(50, 50, 50))
+                    .bg(Color::Rgb(59, 66, 82))
                     .fg(HIGHLIGHT_COLOR)
                     .add_modifier(Modifier::BOLD),
             )
-            .highlight_symbol(" → ");
+            .highlight_symbol(" ► ");
 
         let mut state = ratatui::widgets::ListState::default();
         state.select(app.selected_item);
@@ -369,82 +620,107 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(5), // Header
+                Constraint::Length(6), // Header (increased for richer metadata)
                 Constraint::Min(0),    // Content
             ])
             .split(area);
 
-        // Create header with title, date, and author
-        let mut header_lines = vec![Line::from(vec![
-            Span::styled(
-                "Title: ",
-                Style::default()
-                    .fg(SECONDARY_COLOR)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                &item.title,
-                Style::default()
-                    .fg(HIGHLIGHT_COLOR)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])];
-
-        // Add publication date if available
-        if let Some(date) = &item.formatted_date {
-            header_lines.push(Line::from(vec![
+        // Create header with rich styling and icons
+        let mut header_lines = vec![
+            // Title with icon
+            Line::from(vec![
+                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
                 Span::styled(
-                    "Date: ",
+                    &item.title,
                     Style::default()
-                        .fg(SECONDARY_COLOR)
+                        .fg(HIGHLIGHT_COLOR)
                         .add_modifier(Modifier::BOLD),
                 ),
+            ]),
+            // Separator line
+            Line::from(vec![
+                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
+                Span::styled(
+                    "─".repeat(
+                        (chunks[0].width as usize)
+                            .saturating_sub(4)
+                            .min(item.title.width()),
+                    ),
+                    Style::default().fg(BORDER_COLOR),
+                ),
+            ]),
+        ];
+
+        // Add publication date with icon
+        if let Some(date) = &item.formatted_date {
+            header_lines.push(Line::from(vec![
+                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
+                Span::styled(
+                    "🕒 ",
+                    Style::default()
+                        .fg(PRIMARY_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("Published: ", Style::default().fg(SECONDARY_COLOR)),
                 Span::styled(date, Style::default().fg(TEXT_COLOR)),
             ]));
         }
 
-        // Add author if available
+        // Add author with icon
         if let Some(author) = &item.author {
             header_lines.push(Line::from(vec![
+                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
                 Span::styled(
-                    "Author: ",
+                    "👤 ",
                     Style::default()
-                        .fg(SECONDARY_COLOR)
+                        .fg(PRIMARY_COLOR)
                         .add_modifier(Modifier::BOLD),
                 ),
+                Span::styled("Author: ", Style::default().fg(SECONDARY_COLOR)),
                 Span::styled(author, Style::default().fg(TEXT_COLOR)),
             ]));
         }
 
-        // Add link
+        // Add link with visual cue
         if let Some(link) = &item.link {
             header_lines.push(Line::from(vec![
+                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
                 Span::styled(
-                    "Link: ",
-                    Style::default()
-                        .fg(SECONDARY_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    link,
+                    "🔗 ",
                     Style::default()
                         .fg(PRIMARY_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("Link: ", Style::default().fg(SECONDARY_COLOR)),
+                Span::styled(
+                    truncate_url(link, 40),
+                    Style::default()
+                        .fg(ACCENT_COLOR)
                         .add_modifier(Modifier::UNDERLINED),
                 ),
             ]));
-            header_lines.push(Line::from(vec![Span::styled(
-                "Press 'o' to open in browser",
-                Style::default().fg(MUTED_COLOR),
-            )]));
+
+            // Add guidance for opening in browser
+            header_lines.push(Line::from(vec![
+                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
+                Span::styled("  └─ Press ", Style::default().fg(BORDER_COLOR)),
+                Span::styled(
+                    "'o'",
+                    Style::default()
+                        .fg(HIGHLIGHT_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" to open in browser", Style::default().fg(BORDER_COLOR)),
+            ]));
         }
 
         let header = Paragraph::new(header_lines)
             .block(
                 Block::default()
-                    .title(" Item Details ")
+                    .title(" 📄 Article Details ")
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
+                    .border_type(NORMAL_BORDER)
                     .border_style(Style::default().fg(PRIMARY_COLOR))
                     .padding(Padding::new(1, 1, 0, 0)),
             )
@@ -452,20 +728,21 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
         f.render_widget(header, chunks[0]);
 
-        // Render content with HTML converted to plain text
+        // Render content with HTML converted to plain text and formatted
         let description = if let Some(desc) = &item.description {
             from_read(desc.as_bytes(), 80)
         } else {
             "No description available".to_string()
         };
 
+        // Create content paragraph with enhanced formatting
         let content = Paragraph::new(description)
             .block(
                 Block::default()
-                    .title(" Content ")
+                    .title(" 📝 Content ")
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
+                    .border_type(NORMAL_BORDER)
                     .border_style(Style::default().fg(PRIMARY_COLOR))
                     .padding(Padding::new(1, 1, 1, 1)),
             )
@@ -477,13 +754,13 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 }
 
 fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
-    let (msg, style) = match app.input_mode {
+    let (msg, _) = match app.input_mode {
         InputMode::Normal => {
             let help_text = match app.view {
-                View::Dashboard => "f: feeds | a: add feed | r: refresh | enter: view item | o: open link | /: search | q: quit",
-                View::FeedList => "h/esc: home | a: add feed | d: delete feed | enter: view feed | r: refresh | /: search | q: quit",
-                View::FeedItems => "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit",
-                View::FeedItemDetail => "h/esc: back | home: dashboard | o: open in browser | q: quit",
+                View::Dashboard => "  f: feeds  |  a: add feed  |  r: refresh  |  enter: view item  |  o: open link  |  /: search  |  q: quit  ",
+                View::FeedList => "  h/esc: home  |  a: add feed  |  d: delete feed  |  enter: view feed  |  r: refresh  |  /: search  |  q: quit  ",
+                View::FeedItems => "  h/esc: back to feeds  |  home: dashboard  |  enter: view detail  |  o: open link  |  /: search  |  q: quit  ",
+                View::FeedItemDetail => "  h/esc: back  |  home: dashboard  |  o: open in browser  |  q: quit  ",
             };
             (help_text, Style::default().fg(TEXT_COLOR))
         }
@@ -493,15 +770,45 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
     // Only show help bar in normal mode
     if matches!(app.input_mode, InputMode::Normal) {
-        let help = Paragraph::new(msg)
-            .style(style)
+        // Create a stylized help bar with visually separated commands
+        let parts: Vec<&str> = msg.split('|').collect();
+        let mut spans = Vec::new();
+
+        for (idx, part) in parts.iter().enumerate() {
+            let trimmed = part.trim();
+
+            // Extract the command key and description
+            if let Some(pos) = trimmed.find(':') {
+                let (key, desc) = trimmed.split_at(pos + 1);
+
+                // Add the key in highlight color
+                spans.push(Span::styled(
+                    key,
+                    Style::default()
+                        .fg(HIGHLIGHT_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ));
+
+                // Add the description in normal text color
+                spans.push(Span::styled(desc, Style::default().fg(TEXT_COLOR)));
+            } else {
+                spans.push(Span::styled(trimmed, Style::default().fg(TEXT_COLOR)));
+            }
+
+            // Add separator unless this is the last item
+            if idx < parts.len() - 1 {
+                spans.push(Span::styled(" | ", Style::default().fg(BORDER_COLOR)));
+            }
+        }
+
+        let help = Paragraph::new(Line::from(spans))
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
+                    .border_type(NORMAL_BORDER)
                     .border_style(Style::default().fg(PRIMARY_COLOR))
-                    .title(" Help ")
+                    .title(" 💡 Commands ")
                     .title_alignment(Alignment::Center),
             );
         f.render_widget(help, area);
@@ -509,21 +816,35 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 }
 
 fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str) {
-    let area = centered_rect(60, 20, f.size());
+    let area = centered_rect(60, 25, f.size());
 
     // Clear the background
     f.render_widget(Clear, area);
 
-    let error_text = Paragraph::new(Text::from(error.to_string()))
-        .style(Style::default().fg(Color::Red))
+    // Create a visually appealing error box
+    let error_lines = vec![
+        Line::from(Span::styled(
+            "  ⚠️  ERROR  ⚠️  ",
+            Style::default()
+                .fg(ERROR_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(error, Style::default().fg(TEXT_COLOR))),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press any key to dismiss",
+            Style::default().fg(MUTED_COLOR),
+        )),
+    ];
+
+    let error_text = Paragraph::new(error_lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Red))
-                .title(" Error ")
-                .title_alignment(Alignment::Center)
-                .padding(Padding::new(1, 1, 1, 1)),
+                .border_type(ACTIVE_BORDER)
+                .border_style(Style::default().fg(ERROR_COLOR))
+                .padding(Padding::new(2, 2, 1, 1)),
         )
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
@@ -532,34 +853,95 @@ fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str) {
 }
 
 fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let area = centered_rect(60, 20, f.size());
+    let area = centered_rect(70, 20, f.size());
 
-    // Clear the background
+    // Clear the background with semi-transparent effect
     f.render_widget(Clear, area);
 
-    let title = if matches!(app.input_mode, InputMode::InsertUrl) {
-        " Add Feed URL "
+    // Create modal title and help text based on mode
+    let (title, help_text, icon) = if matches!(app.input_mode, InputMode::InsertUrl) {
+        (
+            " Add Feed URL ",
+            "Enter the RSS feed URL and press Enter",
+            "🔗",
+        )
     } else {
-        " Search "
+        (" Search ", "Enter search terms and press Enter", "🔍")
     };
 
-    let input = Paragraph::new(app.input.as_str())
-        .style(Style::default().fg(HIGHLIGHT_COLOR))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(PRIMARY_COLOR))
-                .title(title)
-                .title_alignment(Alignment::Center)
-                .padding(Padding::new(1, 1, 1, 1)),
-        );
+    // Create an attractive input box
+    let mut lines = Vec::new();
 
-    f.render_widget(input, area);
+    // Add icon and title
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("  {}  ", icon),
+            Style::default().fg(SECONDARY_COLOR),
+        ),
+        Span::styled(
+            title,
+            Style::default()
+                .fg(HIGHLIGHT_COLOR)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    // Add help text
+    lines.push(Line::from(vec![Span::styled(
+        format!("  {}  ", help_text),
+        Style::default().fg(MUTED_COLOR),
+    )]));
+
+    // Add spacer
+    lines.push(Line::from(""));
+
+    // Add input field with cursor
+    let input_display = format!("{}█", app.input);
+    lines.push(Line::from(vec![
+        Span::styled("  > ", Style::default().fg(PRIMARY_COLOR)),
+        Span::styled(
+            input_display,
+            Style::default()
+                .fg(ACCENT_COLOR)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    // Add controls help
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "  Press Enter to submit or Esc to cancel  ",
+        Style::default().fg(TEXT_COLOR),
+    )]));
+
+    let input_paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(ACTIVE_BORDER)
+            .border_style(Style::default().fg(PRIMARY_COLOR))
+            .padding(Padding::new(2, 2, 1, 1)),
+    );
+
+    f.render_widget(input_paragraph, area);
 }
 
 // Helper function to create a centered rect using up certain percentage of the available rect
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    // Create padding effect with backdrop
+    let _ = Canvas::default()
+        .paint(|ctx| {
+            ctx.draw(&Rectangle {
+                x: 0.0,
+                y: 0.0,
+                width: r.width as f64,
+                height: r.height as f64,
+                color: Color::Rgb(0, 0, 0),
+            });
+        })
+        .x_bounds([0.0, r.width as f64])
+        .y_bounds([0.0, r.height as f64]);
+
+    // Calculate popup dimensions
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -577,4 +959,42 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+// Helper function to truncate a URL for display
+fn truncate_url(url: &str, max_length: usize) -> String {
+    // Remove common prefixes for cleaner display
+    let clean_url = url
+        .replace("https://", "")
+        .replace("http://", "")
+        .replace("www.", "");
+
+    truncate_str(&clean_url, max_length)
+}
+
+// Helper function to truncate a string with unicode awareness
+fn truncate_str(s: &str, max_chars: usize) -> String {
+    if s.width() <= max_chars {
+        s.to_string()
+    } else {
+        // Find position to truncate while respecting unicode boundaries
+        let mut total_width = 0;
+        let mut truncate_idx = 0;
+
+        for (idx, c) in s.char_indices() {
+            let char_width = c.width_cjk().unwrap_or(1);
+            if total_width + char_width > max_chars.saturating_sub(3) {
+                truncate_idx = idx;
+                break;
+            }
+            total_width += char_width;
+        }
+
+        if truncate_idx > 0 {
+            format!("{}...", &s[..truncate_idx])
+        } else {
+            // Fallback if we couldn't properly calculate (shouldn't happen often)
+            format!("{}...", &s[..max_chars.saturating_sub(3)])
+        }
+    }
 }

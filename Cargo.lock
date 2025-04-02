@@ -337,6 +337,7 @@ dependencies = [
  "rss",
  "serde",
  "serde_json",
+ "unicode-width",
 ]
 
 [[package]]
