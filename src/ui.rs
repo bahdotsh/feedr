@@ -15,15 +15,15 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 // Define a refined color palette inspired by modern terminal themes
-const PRIMARY_COLOR: Color = Color::Rgb(129, 161, 193); // Soft blue
-const SECONDARY_COLOR: Color = Color::Rgb(180, 142, 173); // Lavender
-const HIGHLIGHT_COLOR: Color = Color::Rgb(163, 190, 140); // Soft green
-const BACKGROUND_COLOR: Color = Color::Rgb(46, 52, 64); // Dark blue-gray
-const TEXT_COLOR: Color = Color::Rgb(236, 239, 244); // Off-white
-const MUTED_COLOR: Color = Color::Rgb(129, 139, 153); // Steel blue
-const ACCENT_COLOR: Color = Color::Rgb(208, 135, 112); // Soft orange
-const ERROR_COLOR: Color = Color::Rgb(191, 97, 106); // Soft red
-const BORDER_COLOR: Color = Color::Rgb(76, 86, 106); // Slate blue
+const PRIMARY_COLOR: Color = Color::Rgb(130, 170, 255); // Vibrant blue
+const SECONDARY_COLOR: Color = Color::Rgb(199, 146, 234); // Soft purple
+const HIGHLIGHT_COLOR: Color = Color::Rgb(115, 218, 202); // Mint green
+const BACKGROUND_COLOR: Color = Color::Rgb(40, 44, 52); // Deep charcoal
+const TEXT_COLOR: Color = Color::Rgb(238, 238, 238); // Off-white
+const MUTED_COLOR: Color = Color::Rgb(149, 157, 173); // Steel gray
+const ACCENT_COLOR: Color = Color::Rgb(255, 203, 107); // Golden yellow
+const ERROR_COLOR: Color = Color::Rgb(247, 118, 142); // Rose pink
+const BORDER_COLOR: Color = Color::Rgb(84, 88, 98); // Dark gray
 
 // Border styles
 const NORMAL_BORDER: BorderType = BorderType::Rounded;
