@@ -34,6 +34,8 @@ pub struct App {
     pub is_searching: bool,
     pub filtered_items: Vec<(usize, usize)>, // (feed_idx, item_idx) for search results
     pub dashboard_items: Vec<(usize, usize)>, // (feed_idx, item_idx) for dashboard
+    pub is_loading: bool,                    // Flag to indicate loading/refreshing state
+    pub loading_indicator: usize,            // For animated loading indicator
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,12 +53,14 @@ impl App {
             input_mode: InputMode::Normal,
             selected_feed: None,
             selected_item: None,
-            view: View::Dashboard, // Start with dashboard view
+            view: View::Dashboard,
             error: None,
             search_query: String::new(),
             is_searching: false,
             filtered_items: Vec::new(),
             dashboard_items: Vec::new(),
+            is_loading: false,
+            loading_indicator: 0,
         };
 
         // Load bookmarked feeds
@@ -243,6 +247,10 @@ impl App {
     }
 
     pub fn refresh_feeds(&mut self) -> Result<()> {
+        self.is_loading = true;
+
+        // Instead of threading, we'll do a synchronous refresh
+        // but track the loading state to show the animation
         let urls = self.bookmarks.clone();
         self.feeds.clear();
 
@@ -254,6 +262,12 @@ impl App {
         }
 
         self.update_dashboard();
+        self.is_loading = false;
+
         Ok(())
+    }
+
+    pub fn update_loading_indicator(&mut self) {
+        self.loading_indicator = (self.loading_indicator + 1) % 10;
     }
 }

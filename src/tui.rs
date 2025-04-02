@@ -41,25 +41,40 @@ pub fn run(mut app: App) -> Result<()> {
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+    let mut last_tick = std::time::Instant::now();
+    let tick_rate = Duration::from_millis(100); // 100ms for smooth animation
+
     loop {
         terminal.draw(|f| ui::render(f, app))?;
 
-        // Handle timeout for clearing error messages
-        if app.error.is_some() {
-            if event::poll(Duration::from_millis(3000))? {
-                // An event arrived before the timeout, handle it
-                if handle_events(app)? {
-                    return Ok(()); // Exit the app if handle_events returns true
-                }
-            } else {
-                // Timeout expired, clear the error
+        // If loading, use a shorter timeout for animation
+        let timeout = if app.is_loading {
+            tick_rate
+                .checked_sub(last_tick.elapsed())
+                .unwrap_or_else(|| Duration::from_secs(0))
+        } else if app.error.is_some() {
+            Duration::from_millis(3000)
+        } else {
+            Duration::from_millis(100)
+        };
+
+        if event::poll(timeout)? {
+            // Handle user input
+            if handle_events(app)? {
+                return Ok(());
+            }
+        } else if last_tick.elapsed() >= tick_rate {
+            // Update animation frame on tick
+            if app.is_loading {
+                app.update_loading_indicator();
+            }
+
+            // Clear error after timeout
+            if app.error.is_some() && last_tick.elapsed() >= Duration::from_millis(3000) {
                 app.error = None;
             }
-        } else if event::poll(Duration::from_millis(100))? {
-            // No error is displaying, poll for events normally
-            if handle_events(app)? {
-                return Ok(()); // Exit the app if handle_events returns true
-            }
+
+            last_tick = std::time::Instant::now();
         }
     }
 }
@@ -89,9 +104,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.input_mode = InputMode::InsertUrl;
                     }
                     KeyCode::Char('r') => {
+                        // Set loading flag before starting refresh
+                        app.is_loading = true;
+
                         if let Err(e) = app.refresh_feeds() {
                             app.error = Some(format!("Failed to refresh feeds: {}", e));
                         }
+
+                        // Refresh completed
+                        app.is_loading = false;
                     }
                     KeyCode::Char('f') => {
                         app.view = View::FeedList;
@@ -165,9 +186,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.input_mode = InputMode::SearchMode;
                     }
                     KeyCode::Char('r') => {
+                        // Set loading flag before starting refresh
+                        app.is_loading = true;
+
                         if let Err(e) = app.refresh_feeds() {
                             app.error = Some(format!("Failed to refresh feeds: {}", e));
                         }
+
+                        // Refresh completed
+                        app.is_loading = false;
                     }
                     KeyCode::Up => {
                         if let Some(selected) = app.selected_feed {
@@ -208,6 +235,17 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Char('/') => {
                         app.input.clear();
                         app.input_mode = InputMode::SearchMode;
+                    }
+                    KeyCode::Char('r') => {
+                        // Set loading flag before starting refresh
+                        app.is_loading = true;
+
+                        if let Err(e) = app.refresh_feeds() {
+                            app.error = Some(format!("Failed to refresh feeds: {}", e));
+                        }
+
+                        // Refresh completed
+                        app.is_loading = false;
                     }
                     KeyCode::Up => {
                         if let Some(selected) = app.selected_item {
@@ -253,6 +291,17 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Home => {
                         app.view = View::Dashboard;
                         app.selected_item = None;
+                    }
+                    KeyCode::Char('r') => {
+                        // Set loading flag before starting refresh
+                        app.is_loading = true;
+
+                        if let Err(e) = app.refresh_feeds() {
+                            app.error = Some(format!("Failed to refresh feeds: {}", e));
+                        }
+
+                        // Refresh completed
+                        app.is_loading = false;
                     }
                     KeyCode::Char('o') => {
                         if let Err(e) = app.open_current_item_in_browser() {

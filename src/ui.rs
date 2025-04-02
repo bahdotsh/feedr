@@ -65,12 +65,24 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         View::FeedItemDetail => 3,
     };
 
+    // Loading animation characters
+    let loading_symbols = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+    // Create title with loading indicator if loading
+    let title = if app.is_loading {
+        format!(" {} Loading... ", loading_symbols[app.loading_indicator])
+    } else {
+        " Feedr ".to_string()
+    };
+
     let tabs = Tabs::new(titles.iter().map(|t| Line::from(*t)).collect())
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(PRIMARY_COLOR))
+                .title(title)
+                .title_alignment(Alignment::Center)
                 .padding(Padding::new(1, 0, 0, 0)),
         )
         .style(Style::default().fg(MUTED_COLOR))
