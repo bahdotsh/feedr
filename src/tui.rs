@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, View};
+use crate::app::{App, InputMode, TimeFilter, View};
 use crate::ui;
 use anyhow::Result;
 use crossterm::{
@@ -85,6 +85,44 @@ fn handle_events(app: &mut App) -> Result<bool> {
             InputMode::Normal => match app.view {
                 View::Dashboard => match key.code {
                     KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('f') => {
+                        app.filter_mode = true;
+                        app.input_mode = InputMode::FilterMode;
+                    }
+                    KeyCode::Char('c') => {
+                        // Get available categories
+                        let categories = app.get_available_categories();
+
+                        if categories.is_empty() {
+                            // No categories available, toggle off if on
+                            app.filter_options.category = None;
+                        } else {
+                            // Cycle through available categories
+                            if app.filter_options.category.is_none() {
+                                // Set to first category
+                                app.filter_options.category = Some(categories[0].clone());
+                            } else {
+                                // Find current index and move to next
+                                let current = app.filter_options.category.as_ref().unwrap();
+                                let current_idx = categories.iter().position(|c| c == current);
+
+                                if let Some(idx) = current_idx {
+                                    if idx < categories.len() - 1 {
+                                        // Move to next category
+                                        app.filter_options.category =
+                                            Some(categories[idx + 1].clone());
+                                    } else {
+                                        // Wrap around to None
+                                        app.filter_options.category = None;
+                                    }
+                                } else {
+                                    // Current category not found, set to first
+                                    app.filter_options.category = Some(categories[0].clone());
+                                }
+                            }
+                        }
+                        app.apply_filters();
+                    }
                     KeyCode::Tab => {
                         // Check if shift modifier is pressed
                         if key.modifiers.contains(event::KeyModifiers::SHIFT) {
@@ -113,9 +151,6 @@ fn handle_events(app: &mut App) -> Result<bool> {
 
                         // Refresh completed
                         app.is_loading = false;
-                    }
-                    KeyCode::Char('f') => {
-                        app.view = View::FeedList;
                     }
                     KeyCode::Char('/') => {
                         app.input.clear();
@@ -292,6 +327,14 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Enter => {
                         if app.selected_item.is_some() {
                             app.view = View::FeedItemDetail;
+                            if let Some(feed_idx) = app.selected_feed {
+                                if let Some(item_idx) = app.selected_item {
+                                    if let Err(e) = app.mark_item_as_read(feed_idx, item_idx) {
+                                        app.error =
+                                            Some(format!("Failed to mark item as read: {}", e));
+                                    }
+                                }
+                            }
                         }
                     }
                     KeyCode::Char('o') => {
@@ -382,6 +425,75 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 }
                 KeyCode::Backspace => {
                     app.input.pop();
+                }
+                _ => {}
+            },
+            InputMode::FilterMode => match key.code {
+                KeyCode::Esc => {
+                    app.filter_mode = false;
+                    app.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char('c') => {
+                    // Toggle category filter
+                    if app.filter_options.category.is_none() {
+                        // Cycle through available categories (tech, news, etc.)
+                        app.filter_options.category = Some("tech".to_string());
+                    } else if app.filter_options.category.as_deref() == Some("tech") {
+                        app.filter_options.category = Some("news".to_string());
+                    } else if app.filter_options.category.as_deref() == Some("news") {
+                        app.filter_options.category = Some("science".to_string());
+                    } else {
+                        app.filter_options.category = None;
+                    }
+                    app.apply_filters();
+                }
+                KeyCode::Char('t') => {
+                    // Cycle through time filters
+                    if app.filter_options.age.is_none() {
+                        app.filter_options.age = Some(TimeFilter::Today);
+                    } else if app.filter_options.age == Some(TimeFilter::Today) {
+                        app.filter_options.age = Some(TimeFilter::ThisWeek);
+                    } else if app.filter_options.age == Some(TimeFilter::ThisWeek) {
+                        app.filter_options.age = Some(TimeFilter::ThisMonth);
+                    } else if app.filter_options.age == Some(TimeFilter::ThisMonth) {
+                        app.filter_options.age = Some(TimeFilter::Older);
+                    } else {
+                        app.filter_options.age = None;
+                    }
+                    app.apply_filters();
+                }
+                KeyCode::Char('a') => {
+                    // Toggle author filter
+                    app.filter_options.has_author = match app.filter_options.has_author {
+                        None => Some(true),
+                        Some(true) => Some(false),
+                        Some(false) => None,
+                    };
+                    app.apply_filters();
+                }
+                KeyCode::Char('r') => {
+                    // Toggle read status filter
+                    app.filter_options.read_status = match app.filter_options.read_status {
+                        None => Some(true),        // Show read
+                        Some(true) => Some(false), // Show unread
+                        Some(false) => None,       // Show all
+                    };
+                    app.apply_filters();
+                }
+                KeyCode::Char('l') => {
+                    // Cycle through content length filters
+                    app.filter_options.min_length = match app.filter_options.min_length {
+                        None => Some(100),       // Short
+                        Some(100) => Some(500),  // Medium
+                        Some(500) => Some(1000), // Long
+                        _ => None,               // All
+                    };
+                    app.apply_filters();
+                }
+                KeyCode::Char('x') => {
+                    // Clear all filters
+                    app.filter_options.reset();
+                    app.apply_filters();
                 }
                 _ => {}
             },

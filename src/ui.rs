@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, View};
+use crate::app::{App, InputMode, TimeFilter, View};
 use html2text::from_read;
 use ratatui::{
     backend::Backend,
@@ -63,6 +63,11 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &App) {
     // Show input modal when in input modes
     if matches!(app.input_mode, InputMode::InsertUrl | InputMode::SearchMode) {
         render_input_modal(f, app);
+    }
+
+    // Show filter modal when in filter mode
+    if app.filter_mode {
+        render_filter_modal(f, app);
     }
 }
 
@@ -130,14 +135,22 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 }
 
 fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
-    let title = if app.is_searching {
+    let mut title = if app.is_searching {
         format!(" 🔍 Search Results: '{}' ", app.search_query)
     } else {
         " 🔔 Latest Updates ".to_string()
     };
 
+    // Add filter indicators to title if any filters are active
+    if app.filter_options.is_active() {
+        title = format!("{} | 🔍 Filtered", title);
+    }
+
+    // Use the filtered items when filters are active
     let items_to_display = if app.is_searching {
         &app.filtered_items
+    } else if app.filter_options.is_active() {
+        &app.filtered_dashboard_items
     } else {
         &app.dashboard_items
     };
@@ -276,11 +289,49 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         return;
     }
 
+    if app.filter_options.is_active() && items_to_display.is_empty() {
+        let mut text = Text::default();
+
+        text.lines.push(Line::from(""));
+        text.lines.push(Line::from(Span::styled(
+            "       🔍       ",
+            Style::default().fg(SECONDARY_COLOR),
+        )));
+        text.lines.push(Line::from(""));
+        text.lines.push(Line::from(Span::styled(
+            "No items match your current filters",
+            Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+        )));
+        text.lines.push(Line::from(""));
+        text.lines.push(Line::from(Span::styled(
+            app.get_filter_summary(),
+            Style::default().fg(SECONDARY_COLOR),
+        )));
+        text.lines.push(Line::from(""));
+        text.lines.push(Line::from(Span::styled(
+            "Press 'f' to adjust filters or 'r' to refresh feeds",
+            Style::default().fg(HIGHLIGHT_COLOR),
+        )));
+
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .title(title)
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(NORMAL_BORDER)
+                .border_style(Style::default().fg(PRIMARY_COLOR))
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
+
+        f.render_widget(paragraph, area);
+        return;
+    }
+
     // For non-empty dashboard, create richly formatted items
     let items: Vec<ListItem> = items_to_display
         .iter()
         .enumerate()
-        .map(|(idx, _)| {
+        .map(|(idx, &(feed_idx, item_idx))| {
             let (feed, item) = if app.is_searching {
                 app.search_item(idx).unwrap()
             } else {
@@ -289,6 +340,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
             let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
             let is_selected = app.selected_item.map_or(false, |selected| selected == idx);
+            let is_read = app.is_item_read(feed_idx, item_idx);
 
             // Create clearer visual group with feed name as header
             ListItem::new(vec![
@@ -298,6 +350,8 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                         if is_selected { "► " } else { "● " },
                         Style::default().fg(if is_selected {
                             HIGHLIGHT_COLOR
+                        } else if is_read {
+                            MUTED_COLOR // Use muted color for read items
                         } else {
                             PRIMARY_COLOR
                         }),
@@ -538,7 +592,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 }
 
 // Add this helper function to extract domain from URL
-fn extract_domain(url: &str) -> String {
+pub fn extract_domain(url: &str) -> String {
     let clean_url = url
         .replace("https://", "")
         .replace("http://", "")
@@ -603,10 +657,15 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 let date_str = item.formatted_date.as_deref().unwrap_or("");
                 let author = item.author.as_deref().unwrap_or("");
                 let is_selected = app.selected_item.map_or(false, |selected| selected == idx);
+                let is_read = app
+                    .selected_feed
+                    .map_or(false, |feed_idx| app.is_item_read(feed_idx, idx));
 
                 // More distinct selection indicators
                 let (title_color, bullet_icon, bullet_color) = if is_selected {
                     (HIGHLIGHT_COLOR, "►", PRIMARY_COLOR)
+                } else if is_read {
+                    (MUTED_COLOR, "•", MUTED_COLOR) // Muted for read items
                 } else {
                     (SECONDARY_COLOR, "•", MUTED_COLOR)
                 };
@@ -758,6 +817,30 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             ]),
         ];
 
+        // Add read status with icon
+        if let (Some(feed_idx), Some(item_idx)) = (app.selected_feed, app.selected_item) {
+            let is_read = app.is_item_read(feed_idx, item_idx);
+            header_lines.push(Line::from(vec![
+                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
+                Span::styled(
+                    if is_read { "✓ " } else { "✗ " },
+                    Style::default().fg(if is_read {
+                        HIGHLIGHT_COLOR
+                    } else {
+                        MUTED_COLOR
+                    }),
+                ),
+                Span::styled("Status: ", Style::default().fg(SECONDARY_COLOR)),
+                Span::styled(
+                    if is_read { "Read" } else { "Unread" },
+                    Style::default().fg(if is_read {
+                        HIGHLIGHT_COLOR
+                    } else {
+                        MUTED_COLOR
+                    }),
+                ),
+            ]));
+        }
         // Add publication date with icon
         if let Some(date) = &item.formatted_date {
             header_lines.push(Line::from(vec![
@@ -864,7 +947,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let (msg, _) = match app.input_mode {
         InputMode::Normal => {
             let help_text = match app.view {
-                View::Dashboard => "  f: feeds  |  a: add feed  |  r: refresh  |  enter: view item  |  o: open link  |  /: search  |  q: quit  ",
+                View::Dashboard => "  v: feeds  |  a: add feed  |  r: refresh  |  enter: view item  |  o: open link  |  /: search  |  f: filter  |  q: quit  ",
                 View::FeedList => "  h/esc: home  |  a: add feed  |  d: delete feed  |  enter: view feed  |  r: refresh  |  /: search  |  q: quit  ",
                 View::FeedItems => "  h/esc: back to feeds  |  home: dashboard  |  enter: view detail  |  o: open link  |  /: search  |  q: quit  ",
                 View::FeedItemDetail => "  h/esc: back  |  home: dashboard  |  o: open in browser  |  q: quit  ",
@@ -873,6 +956,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         }
         InputMode::InsertUrl => ("", Style::default().fg(MUTED_COLOR)),
         InputMode::SearchMode => ("", Style::default().fg(MUTED_COLOR)),
+        InputMode::FilterMode => ("", Style::default().fg(MUTED_COLOR)),
     };
 
     // Only show help bar in normal mode
@@ -1030,6 +1114,191 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     );
 
     f.render_widget(input_paragraph, area);
+}
+
+fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let area = centered_rect(70, 60, f.size());
+
+    // Clear the area
+    f.render_widget(Clear, area);
+
+    // Create filter selection UI
+    let mut text = Vec::new();
+
+    // Header
+    text.push(Line::from(vec![
+        Span::styled("  🔍  ", Style::default().fg(PRIMARY_COLOR)),
+        Span::styled(
+            "Feed Filters",
+            Style::default()
+                .fg(HIGHLIGHT_COLOR)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    text.push(Line::from(""));
+    text.push(Line::from("  Select filters to apply to your feed items:"));
+    text.push(Line::from(""));
+
+    // Category filter
+    let available_categories = app.get_available_categories();
+    let category_status = match &app.filter_options.category {
+        Some(cat) => format!("[{}]", cat),
+        None => "[Off]".to_string(),
+    };
+
+    text.push(Line::from(vec![
+        Span::styled("  c - Category: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled(
+            category_status,
+            Style::default().fg(if app.filter_options.category.is_some() {
+                HIGHLIGHT_COLOR
+            } else {
+                MUTED_COLOR
+            }),
+        ),
+        Span::styled(
+            if !available_categories.is_empty() {
+                format!(" ({})", available_categories.join(", "))
+            } else {
+                "".to_string()
+            },
+            Style::default().fg(MUTED_COLOR),
+        ),
+    ]));
+
+    // Age filter
+    let age_status = match &app.filter_options.age {
+        Some(age) => {
+            let age_str = match age {
+                TimeFilter::Today => "Today",
+                TimeFilter::ThisWeek => "This Week",
+                TimeFilter::ThisMonth => "This Month",
+                TimeFilter::Older => "Older",
+            };
+            format!("[{}]", age_str)
+        }
+        None => "[Off]".to_string(),
+    };
+
+    text.push(Line::from(vec![
+        Span::styled("  t - Time/Age: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled(
+            age_status,
+            Style::default().fg(if app.filter_options.age.is_some() {
+                HIGHLIGHT_COLOR
+            } else {
+                MUTED_COLOR
+            }),
+        ),
+    ]));
+
+    // Author filter
+    let author_status = match app.filter_options.has_author {
+        Some(true) => "[With author]",
+        Some(false) => "[No author]",
+        None => "[Off]",
+    };
+
+    text.push(Line::from(vec![
+        Span::styled("  a - Author: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled(
+            author_status,
+            Style::default().fg(if app.filter_options.has_author.is_some() {
+                HIGHLIGHT_COLOR
+            } else {
+                MUTED_COLOR
+            }),
+        ),
+    ]));
+
+    // Read status filter
+    let read_status = match app.filter_options.read_status {
+        Some(true) => "[Read]",
+        Some(false) => "[Unread]",
+        None => "[Off]",
+    };
+
+    text.push(Line::from(vec![
+        Span::styled("  r - Read status: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled(
+            read_status,
+            Style::default().fg(if app.filter_options.read_status.is_some() {
+                HIGHLIGHT_COLOR
+            } else {
+                MUTED_COLOR
+            }),
+        ),
+    ]));
+
+    // Length filter
+    let length_status = match app.filter_options.min_length {
+        Some(100) => "[Short]",
+        Some(500) => "[Medium]",
+        Some(1000) => "[Long]",
+        Some(n) => &format!("[{} chars]", n),
+        None => "[Off]",
+    };
+
+    text.push(Line::from(vec![
+        Span::styled("  l - Length: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled(
+            length_status,
+            Style::default().fg(if app.filter_options.min_length.is_some() {
+                HIGHLIGHT_COLOR
+            } else {
+                MUTED_COLOR
+            }),
+        ),
+    ]));
+
+    // Clear filters option
+    text.push(Line::from(""));
+    text.push(Line::from(vec![
+        Span::styled("  x - ", Style::default().fg(TEXT_COLOR)),
+        Span::styled("Clear all filters", Style::default().fg(ERROR_COLOR)),
+    ]));
+
+    text.push(Line::from(""));
+    text.push(Line::from(""));
+
+    // Update the filter statistics
+    let (active_count, filtered_count, total_count) = app.get_filter_stats();
+
+    text.push(Line::from(vec![Span::styled(
+        format!(
+            "  Active Filters: {}/5  |  Showing: {}/{} items",
+            active_count, filtered_count, total_count
+        ),
+        Style::default().fg(MUTED_COLOR),
+    )]));
+
+    // Add the filter summary
+    if active_count > 0 {
+        text.push(Line::from(""));
+        text.push(Line::from(vec![Span::styled(
+            format!("  Current filters: {}", app.get_filter_summary()),
+            Style::default().fg(SECONDARY_COLOR),
+        )]));
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(vec![Span::styled(
+        "  Press Esc to close this dialog",
+        Style::default().fg(TEXT_COLOR),
+    )]));
+
+    let filter_paragraph = Paragraph::new(text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(ACTIVE_BORDER)
+            .border_style(Style::default().fg(PRIMARY_COLOR))
+            .title(" Filter Options ")
+            .title_alignment(Alignment::Center)
+            .padding(Padding::new(2, 2, 1, 1)),
+    );
+
+    f.render_widget(filter_paragraph, area);
 }
 
 // Helper function to create a centered rect using up certain percentage of the available rect
