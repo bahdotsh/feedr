@@ -288,26 +288,59 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             };
 
             let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
+            let is_selected = app.selected_item.map_or(false, |selected| selected == idx);
 
-            // Create a visually engaging list item
+            // Create clearer visual group with feed name as header
             ListItem::new(vec![
-                // Title line with feed prefix
+                // Feed source with icon - more prominent
                 Line::from(vec![
                     Span::styled(
-                        format!("● {}: ", feed.title),
+                        if is_selected { "► " } else { "● " },
+                        Style::default().fg(if is_selected {
+                            HIGHLIGHT_COLOR
+                        } else {
+                            PRIMARY_COLOR
+                        }),
+                    ),
+                    Span::styled(
+                        format!("[{}]", feed.title),
                         Style::default()
                             .fg(SECONDARY_COLOR)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(&item.title, Style::default().fg(TEXT_COLOR)),
                 ]),
-                // Date line with visual spacer
+                // Item title - more prominent
+                Line::from(vec![
+                    Span::styled("  │ ", Style::default().fg(BORDER_COLOR)),
+                    Span::styled(
+                        &item.title,
+                        Style::default()
+                            .fg(if is_selected {
+                                HIGHLIGHT_COLOR
+                            } else {
+                                TEXT_COLOR
+                            })
+                            .add_modifier(if is_selected {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                    ),
+                ]),
+                // Publication date with icon
                 Line::from(vec![
                     Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                    Span::styled(format!("{}", date_str), Style::default().fg(MUTED_COLOR)),
+                    Span::styled("🕒 ", Style::default().fg(PRIMARY_COLOR)),
+                    Span::styled(date_str, Style::default().fg(MUTED_COLOR)),
                 ]),
+                // Empty line for spacing between items
+                Line::from(""),
             ])
-            .style(Style::default().fg(TEXT_COLOR))
+            .style(Style::default().fg(TEXT_COLOR).bg(if is_selected {
+                Color::Rgb(59, 66, 82)
+            } else {
+                BACKGROUND_COLOR
+            }))
         })
         .collect();
 
@@ -414,27 +447,45 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         return;
     }
 
-    // For non-empty feed list, create visually rich items
+    // Improved feed list visualization for better readability
     let feeds: Vec<ListItem> = app
         .feeds
         .iter()
         .map(|feed| {
-            // Create badges to visualize item counts
+            // Create more visually distinct items with clearer hierarchy
             let item_count = feed.items.len();
-            let count_style = if item_count > 50 {
-                Style::default()
-                    .fg(HIGHLIGHT_COLOR)
-                    .bg(Color::Rgb(59, 66, 82))
-            } else if item_count > 20 {
-                Style::default().fg(ACCENT_COLOR).bg(Color::Rgb(59, 66, 82))
-            } else {
-                Style::default().fg(MUTED_COLOR).bg(Color::Rgb(59, 66, 82))
+
+            // Create a categorized badge based on feed size
+            let (count_style, category) = match item_count {
+                0..=5 => (
+                    Style::default().fg(Color::Red).bg(Color::Rgb(40, 40, 40)),
+                    "small",
+                ),
+                6..=20 => (
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .bg(Color::Rgb(40, 40, 40)),
+                    "medium",
+                ),
+                21..=50 => (
+                    Style::default().fg(ACCENT_COLOR).bg(Color::Rgb(40, 40, 40)),
+                    "large",
+                ),
+                _ => (
+                    Style::default()
+                        .fg(HIGHLIGHT_COLOR)
+                        .bg(Color::Rgb(40, 40, 40)),
+                    "huge",
+                ),
             };
 
             let count_badge = format!(" {} items ", item_count);
 
+            // Extract domain for cleaner display
+            let domain = extract_domain(&feed.url);
+
             ListItem::new(vec![
-                // Title with icon
+                // Title with clearer visual hierarchy
                 Line::from(vec![
                     Span::styled("● ", Style::default().fg(PRIMARY_COLOR)),
                     Span::styled(
@@ -444,16 +495,18 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]),
-                // Stats line with badge
+                // More informative metadata with visual separation
                 Line::from(vec![
-                    Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
+                    Span::styled("  ├─ ", Style::default().fg(BORDER_COLOR)),
                     Span::styled(count_badge, count_style.add_modifier(Modifier::BOLD)),
                     Span::styled(" ", Style::default().fg(MUTED_COLOR)),
-                    // Simple URL indicator
-                    Span::styled(
-                        format!("({})", truncate_url(&feed.url, 30)),
-                        Style::default().fg(MUTED_COLOR),
-                    ),
+                    Span::styled(format!("({})", category), Style::default().fg(MUTED_COLOR)),
+                ]),
+                // Source domain with icon
+                Line::from(vec![
+                    Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
+                    Span::styled("🌐 ", Style::default().fg(PRIMARY_COLOR)),
+                    Span::styled(domain, Style::default().fg(TEXT_COLOR)),
                 ]),
             ])
             .style(Style::default().fg(TEXT_COLOR))
@@ -463,7 +516,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let feeds = List::new(feeds)
         .block(
             Block::default()
-                .title(" 📋 Feeds ")
+                .title(" 📋 Your Feeds ")
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_type(NORMAL_BORDER)
@@ -472,7 +525,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         )
         .highlight_style(
             Style::default()
-                .bg(Color::Rgb(59, 66, 82))
+                .bg(Color::Rgb(59, 66, 82)) // Slightly lighter background for selected item
                 .fg(HIGHLIGHT_COLOR)
                 .add_modifier(Modifier::BOLD),
         )
@@ -482,6 +535,20 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     state.select(app.selected_feed);
 
     f.render_stateful_widget(feeds, area, &mut state);
+}
+
+// Add this helper function to extract domain from URL
+fn extract_domain(url: &str) -> String {
+    let clean_url = url
+        .replace("https://", "")
+        .replace("http://", "")
+        .replace("www.", "");
+
+    if let Some(slash_pos) = clean_url.find('/') {
+        clean_url[..slash_pos].to_string()
+    } else {
+        clean_url
+    }
 }
 
 fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
@@ -527,37 +594,46 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             return;
         }
 
+        // Enhanced feed items for better readability
         let items: Vec<ListItem> = feed
             .items
             .iter()
-            .enumerate() // Add enumeration to know the index
+            .enumerate()
             .map(|(idx, item)| {
                 let date_str = item.formatted_date.as_deref().unwrap_or("");
                 let author = item.author.as_deref().unwrap_or("");
-
-                // Check if this item is selected
                 let is_selected = app.selected_item.map_or(false, |selected| selected == idx);
 
-                // Choose different styling based on selection state
+                // More distinct selection indicators
                 let (title_color, bullet_icon, bullet_color) = if is_selected {
-                    (HIGHLIGHT_COLOR, "► ", PRIMARY_COLOR) // Selected item gets arrow and highlight color
+                    (HIGHLIGHT_COLOR, "►", PRIMARY_COLOR)
                 } else {
-                    (SECONDARY_COLOR, "● ", MUTED_COLOR) // Normal items get bullet and regular color
+                    (SECONDARY_COLOR, "•", MUTED_COLOR)
                 };
 
-                // Create snippet from description if available
+                // Better formatted snippet with HTML cleanup
                 let snippet = if let Some(desc) = &item.description {
                     let plain_text = html2text::from_read(desc.as_bytes(), 50);
-                    let snippet = truncate_str(&plain_text, 70);
-                    format!("  │ {}", snippet)
+                    // Remove excess whitespace for cleaner display
+                    let clean_text = plain_text
+                        .replace('\n', " ")
+                        .replace("  ", " ")
+                        .trim()
+                        .to_string();
+                    let snippet = truncate_str(&clean_text, 80);
+                    snippet
                 } else {
                     "".to_string()
                 };
 
+                // Create visually separated blocks for each item
                 let mut lines = vec![
-                    // Title line with icon
+                    // Title with more distinct selection indicator
                     Line::from(vec![
-                        Span::styled(bullet_icon, Style::default().fg(bullet_color)),
+                        Span::styled(
+                            format!("{} ", bullet_icon),
+                            Style::default().fg(bullet_color),
+                        ),
                         Span::styled(
                             &item.title,
                             Style::default()
@@ -571,31 +647,46 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     ]),
                 ];
 
-                // Add content snippet if available
+                // Add content preview with better formatting
                 if !snippet.is_empty() {
-                    lines.push(Line::from(vec![Span::styled(
-                        snippet,
-                        Style::default().fg(if is_selected { TEXT_COLOR } else { MUTED_COLOR }),
-                    )]));
+                    lines.push(Line::from(vec![
+                        Span::styled("  │ ", Style::default().fg(BORDER_COLOR)),
+                        Span::styled(
+                            snippet,
+                            Style::default().fg(if is_selected { TEXT_COLOR } else { MUTED_COLOR }),
+                        ),
+                    ]));
                 }
 
-                // Add metadata line
-                let meta_line = if !author.is_empty() {
-                    Line::from(vec![
+                // Add better formatted metadata with icons
+                if !author.is_empty() && !date_str.is_empty() {
+                    lines.push(Line::from(vec![
                         Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                        Span::styled(
-                            format!("By: {} • {}", author, date_str),
-                            Style::default().fg(MUTED_COLOR),
-                        ),
-                    ])
-                } else {
-                    Line::from(vec![
+                        Span::styled("👤 ", Style::default().fg(PRIMARY_COLOR)),
+                        Span::styled(author, Style::default().fg(TEXT_COLOR)),
+                        Span::styled(" • ", Style::default().fg(BORDER_COLOR)),
+                        Span::styled("🕒 ", Style::default().fg(PRIMARY_COLOR)),
+                        Span::styled(date_str, Style::default().fg(TEXT_COLOR)),
+                    ]));
+                } else if !author.is_empty() {
+                    lines.push(Line::from(vec![
                         Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                        Span::styled(date_str, Style::default().fg(MUTED_COLOR)),
-                    ])
-                };
+                        Span::styled("👤 ", Style::default().fg(PRIMARY_COLOR)),
+                        Span::styled(author, Style::default().fg(TEXT_COLOR)),
+                    ]));
+                } else if !date_str.is_empty() {
+                    lines.push(Line::from(vec![
+                        Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
+                        Span::styled("🕒 ", Style::default().fg(PRIMARY_COLOR)),
+                        Span::styled(date_str, Style::default().fg(TEXT_COLOR)),
+                    ]));
+                }
 
-                lines.push(meta_line);
+                // Add a subtle separator line between items for better visual grouping
+                lines.push(Line::from(Span::styled(
+                    "  ",
+                    Style::default().fg(MUTED_COLOR),
+                )));
 
                 ListItem::new(lines).style(Style::default().fg(TEXT_COLOR).bg(if is_selected {
                     Color::Rgb(59, 66, 82)
