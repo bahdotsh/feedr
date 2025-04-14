@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, TimeFilter, View};
+use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
 use html2text::from_read;
 use ratatui::{
     backend::Backend,
@@ -8,7 +8,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{
         canvas::{Canvas, Rectangle},
-        Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Tabs, Wrap,
+        Block, BorderType, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Tabs, Wrap,
     },
     Frame,
 };
@@ -51,6 +51,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &App) {
         View::FeedList => render_feed_list(f, app, chunks[1]),
         View::FeedItems => render_feed_items(f, app, chunks[1]),
         View::FeedItemDetail => render_item_detail(f, app, chunks[1]),
+        View::CategoryManagement => render_category_management(f, app, chunks[1]),
     }
 
     render_help_bar(f, app, chunks[2]);
@@ -69,16 +70,22 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &App) {
     if app.filter_mode {
         render_filter_modal(f, app);
     }
+
+    // Show category input modal when in category name input mode
+    if app.input_mode == InputMode::CategoryNameInput {
+        render_category_input_modal(f, app);
+    }
 }
 
 fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     // Create tabs for navigation
-    let titles = vec!["Dashboard", "Feeds", "Items", "Detail"];
+    let titles = vec!["Dashboard", "Feeds", "Items", "Detail", "Categories"];
     let selected_tab = match app.view {
         View::Dashboard => 0,
         View::FeedList => 1,
         View::FeedItems => 2,
         View::FeedItemDetail => 3,
+        View::CategoryManagement => 4,
     };
 
     // Loading animation characters - smoother spinner
@@ -423,11 +430,36 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 }
 
 fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let title_text = vec![
+        Line::from(Span::styled(
+            "  Add your RSS/Atom feeds to get started  ",
+            Style::default().fg(MUTED_COLOR),
+        )),
+        Line::from(Span::styled(
+            "  Press 'a' to add a feed                  ",
+            Style::default().fg(HIGHLIGHT_COLOR),
+        )),
+    ];
+
+    let title_para = Paragraph::new(Text::from(title_text))
+        .block(Block::default().borders(Borders::NONE))
+        .alignment(Alignment::Left);
+
+    f.render_widget(title_para, chunks[0]);
+
     if app.feeds.is_empty() {
-        // Enhanced ASCII art for empty feeds
+        // Restore the stylized ASCII robot penguin
         let mut text = Text::default();
 
-        // Stylized ASCII robot
+        // Stylized ASCII robot penguin
         text.lines.push(Line::from(Span::styled(
             "                                           ",
             Style::default().fg(MUTED_COLOR),
@@ -497,98 +529,79 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 .padding(Padding::new(1, 1, 1, 1)),
         );
 
-        f.render_widget(paragraph, area);
+        f.render_widget(paragraph, chunks[1]);
         return;
     }
 
-    // Improved feed list visualization for better readability
-    let feeds: Vec<ListItem> = app
+    // Modify to show category indicators next to feeds
+    let items: Vec<ListItem> = app
         .feeds
         .iter()
-        .map(|feed| {
-            // Create more visually distinct items with clearer hierarchy
-            let item_count = feed.items.len();
-
-            // Create a categorized badge based on feed size
-            let (count_style, category) = match item_count {
-                0..=5 => (
-                    Style::default().fg(Color::Red).bg(Color::Rgb(40, 40, 40)),
-                    "small",
-                ),
-                6..=20 => (
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .bg(Color::Rgb(40, 40, 40)),
-                    "medium",
-                ),
-                21..=50 => (
-                    Style::default().fg(ACCENT_COLOR).bg(Color::Rgb(40, 40, 40)),
-                    "large",
-                ),
-                _ => (
-                    Style::default()
-                        .fg(HIGHLIGHT_COLOR)
-                        .bg(Color::Rgb(40, 40, 40)),
-                    "huge",
-                ),
+        .enumerate()
+        .map(|(i, feed)| {
+            let mut content = vec![];
+            
+            // Add category indicator if the feed is in a category
+            let category = app.get_category_for_feed(&feed.url);
+            let category_tag = if let Some(cat_idx) = category {
+                if cat_idx < app.categories.len() {
+                    format!(" [{}]", app.categories[cat_idx].name)
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
             };
 
-            let count_badge = format!(" {} items ", item_count);
+            // Feed title with category tag
+            let feed_title = format!("{}{}", feed.title, category_tag);
 
-            // Extract domain for cleaner display
+            if Some(i) == app.selected_feed {
+                content.push(Span::styled(
+                    format!("▶ {}", feed_title),
+                    Style::default()
+                        .fg(HIGHLIGHT_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                content.push(Span::styled(
+                    format!("  {}", feed_title),
+                    Style::default().fg(TEXT_COLOR),
+                ));
+            }
+
             let domain = extract_domain(&feed.url);
+            content.push(Span::styled(
+                format!(" ({})", domain),
+                Style::default().fg(MUTED_COLOR),
+            ));
 
-            ListItem::new(vec![
-                // Title with clearer visual hierarchy
-                Line::from(vec![
-                    Span::styled("● ", Style::default().fg(PRIMARY_COLOR)),
-                    Span::styled(
-                        &feed.title,
-                        Style::default()
-                            .fg(SECONDARY_COLOR)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                // More informative metadata with visual separation
-                Line::from(vec![
-                    Span::styled("  ├─ ", Style::default().fg(BORDER_COLOR)),
-                    Span::styled(count_badge, count_style.add_modifier(Modifier::BOLD)),
-                    Span::styled(" ", Style::default().fg(MUTED_COLOR)),
-                    Span::styled(format!("({})", category), Style::default().fg(MUTED_COLOR)),
-                ]),
-                // Source domain with icon
-                Line::from(vec![
-                    Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                    Span::styled("🌐 ", Style::default().fg(PRIMARY_COLOR)),
-                    Span::styled(domain, Style::default().fg(TEXT_COLOR)),
-                ]),
-            ])
-            .style(Style::default().fg(TEXT_COLOR))
+            ListItem::new(Line::from(content))
         })
         .collect();
 
-    let feeds = List::new(feeds)
+    let feeds = List::new(items)
         .block(
             Block::default()
-                .title(" 📋 Your Feeds ")
-                .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_type(NORMAL_BORDER)
-                .border_style(Style::default().fg(PRIMARY_COLOR))
-                .padding(Padding::new(1, 0, 0, 0)),
+                .title(" 📋 Feeds ")
+                .title_alignment(Alignment::Center)
+                .border_style(Style::default().fg(PRIMARY_COLOR)),
         )
         .highlight_style(
             Style::default()
-                .bg(Color::Rgb(59, 66, 82)) // Slightly lighter background for selected item
-                .fg(HIGHLIGHT_COLOR)
+                .bg(PRIMARY_COLOR)
+                .fg(TEXT_COLOR)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol(" ► ");
 
-    let mut state = ratatui::widgets::ListState::default();
-    state.select(app.selected_feed);
-
-    f.render_stateful_widget(feeds, area, &mut state);
+    // Create a mutable ListState to track selection
+    let mut list_state = ListState::default();
+    list_state.select(app.selected_feed);
+    
+    f.render_stateful_widget(feeds, chunks[1], &mut list_state);
 }
 
 // Add this helper function to extract domain from URL
@@ -944,25 +957,47 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 }
 
 fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
-    let (msg, _) = match app.input_mode {
+    // Match on the input mode and view to determine the help text and style
+    let (help_text, _style) = match app.input_mode {
         InputMode::Normal => {
             let help_text = match app.view {
-                View::Dashboard => "  v: feeds  |  a: add feed  |  r: refresh  |  enter: view item  |  o: open link  |  /: search  |  f: filter  |  q: quit  ",
-                View::FeedList => "  h/esc: home  |  a: add feed  |  d: delete feed  |  enter: view feed  |  r: refresh  |  /: search  |  q: quit  ",
-                View::FeedItems => "  h/esc: back to feeds  |  home: dashboard  |  enter: view detail  |  o: open link  |  /: search  |  q: quit  ",
-                View::FeedItemDetail => "  h/esc: back  |  home: dashboard  |  o: open in browser  |  q: quit  ",
+                View::Dashboard => {
+                    if app.feeds.is_empty() {
+                        "a: Add feed | q: Quit | CTRL+C: Manage categories"
+                    } else {
+                        "↑/↓: Navigate | ENTER: View feed | a: Add feed | r: Refresh | f: Filter | /: Search | q: Quit"
+                    }
+                }
+                View::FeedList => {
+                    if app.feeds.is_empty() {
+                        "a: Add feed | q: Quit | TAB: Dashboard | CTRL+C: Categories"
+                    } else {
+                        "a: Add feed | c: Assign to category | DEL: Remove feed | ENTER: Open | q: Quit | CTRL+C: Categories"
+                    }
+                }
+                View::CategoryManagement => {
+                    "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | ESC/q: Back"
+                }
+                View::FeedItems => {
+                    "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit"
+                }
+                View::FeedItemDetail => {
+                    "h/esc: back | home: dashboard | o: open in browser | q: quit"
+                }
             };
             (help_text, Style::default().fg(TEXT_COLOR))
         }
-        InputMode::InsertUrl => ("", Style::default().fg(MUTED_COLOR)),
-        InputMode::SearchMode => ("", Style::default().fg(MUTED_COLOR)),
+        InputMode::InsertUrl => ("Enter feed URL (e.g., https://news.ycombinator.com/rss)", Style::default().fg(HIGHLIGHT_COLOR)),
+        InputMode::SearchMode => ("Enter search term (press ENTER to search)", Style::default().fg(HIGHLIGHT_COLOR)),
         InputMode::FilterMode => ("", Style::default().fg(MUTED_COLOR)),
+        InputMode::CategoryNameInput => ("", Style::default().fg(MUTED_COLOR)),
+        InputMode::CategoryMode => ("", Style::default().fg(MUTED_COLOR)),
     };
 
     // Only show help bar in normal mode
     if matches!(app.input_mode, InputMode::Normal) {
         // Create a stylized help bar with visually separated commands
-        let parts: Vec<&str> = msg.split('|').collect();
+        let parts: Vec<&str> = help_text.split('|').collect();
         let mut spans = Vec::new();
 
         for (idx, part) in parts.iter().enumerate() {
@@ -1373,4 +1408,214 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
             format!("{}...", &s[..max_chars.saturating_sub(3)])
         }
     }
+}
+
+// Update the render_category_management function to show feeds when a category is expanded
+fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),  // Title
+            Constraint::Min(3),     // Category list
+            Constraint::Length(5),  // Help text
+        ])
+        .split(area);
+
+    // Add a title block
+    let title = match &app.category_action {
+        Some(CategoryAction::AddFeedToCategory(url)) => {
+            // Show which feed is being assigned to a category
+            let feed_idx = app.feeds.iter().position(|f| f.url == *url);
+            let feed_title = feed_idx
+                .and_then(|idx| app.feeds.get(idx))
+                .map_or("Unknown Feed", |feed| feed.title.as_str());
+            format!(" 📂 Add '{}' to Category ", truncate_str(feed_title, 30))
+        }
+        _ => " 📂 Category Management ".to_string(),
+    };
+
+    let title_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(NORMAL_BORDER)
+        .title(title)
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(PRIMARY_COLOR));
+
+    f.render_widget(title_block, chunks[0]);
+
+    // Prepare list items for categories and their feeds
+    let mut list_items = Vec::new();
+    let mut list_indices = Vec::new();  // To map UI index to category index
+    
+    if app.categories.is_empty() {
+        list_items.push(ListItem::new(Line::from(Span::styled(
+            "No categories yet. Press 'n' to create a new category.",
+            Style::default().fg(MUTED_COLOR),
+        ))));
+    } else {
+        for (cat_idx, category) in app.categories.iter().enumerate() {
+            // Add category to the list
+            let icon = if category.expanded { "▼" } else { "▶" };
+            let feed_count = category.feed_count();
+            let count_text = if feed_count == 1 {
+                "1 feed".to_string()
+            } else {
+                format!("{} feeds", feed_count)
+            };
+            
+            let style = if Some(cat_idx) == app.selected_category {
+                Style::default().fg(HIGHLIGHT_COLOR).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(TEXT_COLOR)
+            };
+            
+            list_items.push(ListItem::new(Line::from(Span::styled(
+                format!("{} {} ({})", icon, category.name, count_text),
+                style,
+            ))));
+            list_indices.push(Some(cat_idx));
+            
+            // If category is expanded, show its feeds
+            if category.expanded {
+                let feeds_in_category = app.feeds.iter()
+                    .enumerate()
+                    .filter(|(_, feed)| category.contains_feed(&feed.url))
+                    .collect::<Vec<_>>();
+                
+                for (feed_idx, feed) in &feeds_in_category {
+                    let feed_style = if Some(*feed_idx) == app.selected_feed {
+                        Style::default().fg(ACCENT_COLOR)
+                    } else {
+                        Style::default().fg(MUTED_COLOR)
+                    };
+                    
+                    list_items.push(ListItem::new(Line::from(Span::styled(
+                        format!("   → {}", truncate_str(&feed.title, 40)),
+                        feed_style,
+                    ))));
+                    list_indices.push(None);  // None means this is a feed, not a category
+                }
+                
+                // Show a message if the category is empty
+                if feeds_in_category.is_empty() {
+                    list_items.push(ListItem::new(Line::from(Span::styled(
+                        "   (No feeds in this category)",
+                        Style::default().fg(MUTED_COLOR),
+                    ))));
+                    list_indices.push(None);
+                }
+            }
+        }
+    }
+
+    let categories_list = List::new(list_items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(NORMAL_BORDER)
+                .title(" Categories ")
+                .border_style(Style::default().fg(SECONDARY_COLOR)),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(PRIMARY_COLOR)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    // Create a mutable ListState based on the selected category
+    let mut list_state = ListState::default();
+    if let Some(selected_idx) = app.selected_category {
+        // Find the corresponding index in the UI list (may differ due to expanded feeds)
+        if let Some(ui_idx) = list_indices.iter().position(|&cat_idx| cat_idx == Some(selected_idx)) {
+            list_state.select(Some(ui_idx));
+        }
+    }
+    
+    f.render_stateful_widget(categories_list, chunks[1], &mut list_state);
+
+    // Render help text
+    let help_text = if let Some(CategoryAction::AddFeedToCategory(_)) = &app.category_action {
+        "ENTER: Add to category | ESC/q: Cancel | UP/DOWN: Navigate"
+    } else {
+        "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | ESC/q: Back"
+    };
+
+    let help_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(NORMAL_BORDER)
+        .title(" Controls ")
+        .border_style(Style::default().fg(MUTED_COLOR));
+
+    let help_para = Paragraph::new(help_text)
+        .block(help_block)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(help_para, chunks[2]);
+}
+
+// Add a new function to render the category name input modal
+fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let area = centered_rect(60, 20, f.size());
+    
+    // Clear the area behind the modal
+    f.render_widget(Clear, area);
+    
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3),  // Title
+            Constraint::Length(3),  // Input field
+            Constraint::Length(1),  // Spacer
+            Constraint::Length(3),  // Help text
+        ])
+        .split(area);
+    
+    // Determine title based on the current action
+    let title = match &app.category_action {
+        Some(CategoryAction::Create) => " Create New Category ",
+        Some(CategoryAction::Rename(_)) => " Rename Category ",
+        _ => " Category Name ",
+    };
+    
+    // Create title block
+    let title_block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(PRIMARY_COLOR));
+    
+    f.render_widget(title_block, chunks[0]);
+    
+    // Create input field
+    let input_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Name ")
+        .border_style(Style::default().fg(SECONDARY_COLOR));
+    
+    let input_text = Paragraph::new(app.input.as_str())
+        .block(input_block)
+        .style(Style::default().fg(HIGHLIGHT_COLOR));
+    
+    f.render_widget(input_text, chunks[1]);
+    
+    // Position cursor at the end of input
+    let cursor_x = app.input.width() as u16 + chunks[1].x + 1; // +1 for border
+    let cursor_y = chunks[1].y + 1;
+    f.set_cursor(cursor_x, cursor_y);
+    
+    // Help text
+    let help_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Controls ")
+        .border_style(Style::default().fg(MUTED_COLOR));
+    
+    let help_text = "ENTER: Confirm | ESC: Cancel";
+    let help_para = Paragraph::new(help_text)
+        .block(help_block)
+        .alignment(Alignment::Center);
+    
+    f.render_widget(help_para, chunks[3]);
 }

@@ -2,15 +2,18 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rss::{Channel, Item};
 use std::time::Duration;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use uuid::Uuid;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Feed {
     pub url: String,
     pub title: String,
     pub items: Vec<FeedItem>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FeedItem {
     pub title: String,
     pub link: Option<String>,
@@ -18,6 +21,53 @@ pub struct FeedItem {
     pub pub_date: Option<String>,
     pub author: Option<String>,
     pub formatted_date: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FeedCategory {
+    pub id: String,
+    pub name: String,
+    pub feeds: HashSet<String>, // URLs of feeds in this category, using HashSet for faster lookup
+    pub expanded: bool,         // UI state: whether the category is expanded in the UI
+}
+
+impl FeedCategory {
+    pub fn new(name: &str) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            feeds: HashSet::new(),
+            expanded: true,
+        }
+    }
+
+    pub fn add_feed(&mut self, url: &str) {
+        self.feeds.insert(url.to_string());
+    }
+
+    pub fn remove_feed(&mut self, url: &str) -> bool {
+        self.feeds.remove(url)
+    }
+
+    pub fn contains_feed(&self, url: &str) -> bool {
+        self.feeds.contains(url)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.feeds.is_empty()
+    }
+
+    pub fn feed_count(&self) -> usize {
+        self.feeds.len()
+    }
+
+    pub fn rename(&mut self, new_name: &str) {
+        self.name = new_name.to_string();
+    }
+
+    pub fn toggle_expanded(&mut self) {
+        self.expanded = !self.expanded;
+    }
 }
 
 impl Feed {

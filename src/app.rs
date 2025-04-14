@@ -1,10 +1,11 @@
-use crate::feed::{Feed, FeedItem};
+use crate::feed::{Feed, FeedCategory, FeedItem};
 use crate::ui::extract_domain;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct FilterOptions {
@@ -41,26 +42,31 @@ impl FilterOptions {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum InputMode {
     Normal,
     InsertUrl,
     SearchMode,
     FilterMode,
+    CategoryMode,     // For category management
+    CategoryNameInput, // For creating/renaming categories
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum View {
     Dashboard,
     FeedList,
     FeedItems,
     FeedItemDetail,
+    CategoryManagement,
 }
 
 #[derive(Clone, Debug)]
 pub struct App {
     pub feeds: Vec<Feed>,
     pub bookmarks: Vec<String>,
+    pub categories: Vec<FeedCategory>,
+    pub selected_category: Option<usize>,
     pub input: String,
     pub input_mode: InputMode,
     pub selected_feed: Option<usize>,
@@ -77,20 +83,36 @@ pub struct App {
     pub filter_mode: bool,       // Whether we're in filter selection mode
     pub read_items: Vec<String>, // Track read item IDs
     pub filtered_dashboard_items: Vec<(usize, usize)>, // Filtered items for dashboard
+    pub category_action: Option<CategoryAction>, // For category management
+}
+
+#[derive(Clone, Debug)]
+pub enum CategoryAction {
+    Create,
+    Rename(usize),
+    AddFeedToCategory(String), // Feed URL to add
 }
 
 #[derive(Serialize, Deserialize)]
 struct SavedData {
     bookmarks: Vec<String>,
+    categories: Vec<FeedCategory>,
+    read_items: Vec<String>,
 }
 
 impl App {
     pub fn new() -> Self {
-        let bookmarks = Self::load_bookmarks().unwrap_or_default();
-        let read_items = Self::load_read_items().unwrap_or_default();
+        let saved_data = Self::load_saved_data().unwrap_or_else(|_| SavedData {
+            bookmarks: vec![],
+            categories: vec![],
+            read_items: vec![],
+        });
+        
         let mut app = Self {
             feeds: Vec::new(),
-            bookmarks,
+            bookmarks: saved_data.bookmarks,
+            categories: saved_data.categories,
+            selected_category: None,
             input: String::new(),
             input_mode: InputMode::Normal,
             selected_feed: None,
@@ -105,8 +127,9 @@ impl App {
             loading_indicator: 0,
             filter_options: FilterOptions::new(),
             filter_mode: false,
-            read_items,
+            read_items: saved_data.read_items,
             filtered_dashboard_items: Vec::new(),
+            category_action: None,
         };
 
         // Load bookmarked feeds
@@ -126,32 +149,42 @@ impl App {
         }
     }
 
-    fn load_read_items() -> Result<Vec<String>> {
-        let path = Self::read_items_path();
+    fn load_saved_data() -> Result<SavedData> {
+        let path = Self::data_path();
         if !path.exists() {
-            return Ok(Vec::new());
+            return Ok(SavedData {
+                bookmarks: Vec::new(),
+                categories: Vec::new(),
+                read_items: Vec::new(),
+            });
         }
 
         let data = fs::read_to_string(path)?;
-        let items: Vec<String> = serde_json::from_str(&data)?;
-        Ok(items)
+        let saved_data: SavedData = serde_json::from_str(&data)?;
+        Ok(saved_data)
     }
 
-    fn save_read_items(&self) -> Result<()> {
-        let path = Self::read_items_path();
+    fn save_data(&self) -> Result<()> {
+        let path = Self::data_path();
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
         }
 
-        let json = serde_json::to_string(&self.read_items)?;
+        let saved_data = SavedData {
+            bookmarks: self.bookmarks.clone(),
+            categories: self.categories.clone(),
+            read_items: self.read_items.clone(),
+        };
+
+        let json = serde_json::to_string(&saved_data)?;
         fs::write(path, json)?;
         Ok(())
     }
 
-    fn read_items_path() -> std::path::PathBuf {
+    fn data_path() -> std::path::PathBuf {
         let mut path = dirs::data_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
         path.push("feedr");
-        path.push("read_items.json");
+        path.push("feedr_data.json");
         path
     }
 
@@ -282,7 +315,7 @@ impl App {
         let item_id = self.get_item_id(feed_idx, item_idx);
         if !item_id.is_empty() && !self.read_items.contains(&item_id) {
             self.read_items.push(item_id);
-            self.save_read_items()?;
+            self.save_data()?;
         }
         Ok(())
     }
@@ -294,55 +327,52 @@ impl App {
     }
 
     pub fn update_dashboard(&mut self) {
+        // Clear existing dashboard items
         self.dashboard_items.clear();
-
-        // Collect all items from all feeds with their indices
+        
+        // Get all feeds and sort by most recent first
         let mut all_items = Vec::new();
+        
         for (feed_idx, feed) in self.feeds.iter().enumerate() {
             for (item_idx, item) in feed.items.iter().enumerate() {
-                if let Some(date_str) = &item.pub_date {
-                    if let Ok(date) = DateTime::parse_from_rfc2822(date_str) {
-                        all_items.push((feed_idx, item_idx, date.with_timezone(&Utc)));
-                    } else {
-                        // If we can't parse the date, still include but with a "oldest" date
-                        all_items.push((feed_idx, item_idx, Utc::now()));
-                    }
-                } else {
-                    // If there's no date, still include but with a "oldest" date
-                    all_items.push((feed_idx, item_idx, Utc::now()));
-                }
+                let date = item.pub_date.as_ref().and_then(|date_str| {
+                    DateTime::parse_from_rfc2822(date_str).ok()
+                });
+                
+                all_items.push((feed_idx, item_idx, date));
             }
         }
-
-        // Sort by date (newest first)
-        all_items.sort_by(|a, b| b.2.cmp(&a.2));
-
-        // Take the 20 newest items
-        self.dashboard_items = all_items
-            .into_iter()
-            .take(20)
-            .map(|(feed_idx, item_idx, _)| (feed_idx, item_idx))
-            .collect();
-
-        self.filtered_dashboard_items = if !self.filter_options.is_active() {
-            self.dashboard_items.clone()
-        } else {
-            self.dashboard_items
-                .iter()
-                .filter(|&&(feed_idx, item_idx)| self.item_matches_filter(feed_idx, item_idx))
-                .cloned()
-                .collect()
-        };
+        
+        // Sort by date (most recent first)
+        all_items.sort_by(|a, b| {
+            match (&a.2, &b.2) {
+                (Some(a_date), Some(b_date)) => b_date.cmp(a_date),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        });
+        
+        // Add items to dashboard (limited to most recent 100 for performance)
+        for (feed_idx, item_idx, _) in all_items.into_iter().take(100) {
+            self.dashboard_items.push((feed_idx, item_idx));
+        }
+        
+        // Apply any active filters
+        self.apply_filters();
     }
 
     pub fn add_feed(&mut self, url: &str) -> Result<()> {
         let feed = Feed::from_url(url)?;
+        self.feeds.push(feed);
         if !self.bookmarks.contains(&url.to_string()) {
             self.bookmarks.push(url.to_string());
-            self.save_bookmarks()?;
         }
-        self.feeds.push(feed);
         self.update_dashboard();
+        
+        // Save data
+        self.save_data()?;
+        
         Ok(())
     }
 
@@ -350,50 +380,39 @@ impl App {
         if let Some(idx) = self.selected_feed {
             if idx < self.feeds.len() {
                 let url = self.feeds[idx].url.clone();
+                
+                // Remove from feeds
                 self.feeds.remove(idx);
-                self.bookmarks.retain(|b| b != &url);
-                self.save_bookmarks()?;
-                if self.feeds.is_empty() {
-                    self.selected_feed = None;
-                } else if idx >= self.feeds.len() {
-                    self.selected_feed = Some(self.feeds.len() - 1);
+                
+                // Remove from bookmarks
+                if let Some(pos) = self.bookmarks.iter().position(|x| x == &url) {
+                    self.bookmarks.remove(pos);
                 }
+                
+                // Remove from all categories
+                for category in &mut self.categories {
+                    category.remove_feed(&url);
+                }
+                
+                // Update selected feed
+                if !self.feeds.is_empty() {
+                    if idx >= self.feeds.len() {
+                        self.selected_feed = Some(self.feeds.len() - 1);
+                    }
+                } else {
+                    self.selected_feed = None;
+                    self.view = View::Dashboard;
+                }
+                
+                // Update dashboard
                 self.update_dashboard();
+                
+                // Save changes
+                self.save_data()?;
             }
         }
+        
         Ok(())
-    }
-
-    fn load_bookmarks() -> Result<Vec<String>> {
-        let path = Self::bookmarks_path();
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-
-        let data = fs::read_to_string(path)?;
-        let saved: SavedData = serde_json::from_str(&data)?;
-        Ok(saved.bookmarks)
-    }
-
-    fn save_bookmarks(&self) -> Result<()> {
-        let path = Self::bookmarks_path();
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
-        }
-
-        let data = SavedData {
-            bookmarks: self.bookmarks.clone(),
-        };
-        let json = serde_json::to_string_pretty(&data)?;
-        fs::write(path, json)?;
-        Ok(())
-    }
-
-    fn bookmarks_path() -> std::path::PathBuf {
-        let mut path = dirs::data_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
-        path.push("feedr");
-        path.push("bookmarks.json");
-        path
     }
 
     pub fn current_feed(&self) -> Option<&Feed> {
@@ -614,5 +633,156 @@ impl App {
         } else {
             parts.join(" | ")
         }
+    }
+
+    // Category management functions
+    pub fn create_category(&mut self, name: &str) -> Result<()> {
+        // Trim the name and check if it's empty
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(anyhow::anyhow!("Category name cannot be empty"));
+        }
+
+        // Check if category with same name exists
+        if self.categories.iter().any(|c| c.name == name) {
+            return Err(anyhow::anyhow!("Category with this name already exists"));
+        }
+
+        // Create and add the new category
+        let category = FeedCategory::new(name);
+        self.categories.push(category);
+        self.selected_category = Some(self.categories.len() - 1);
+        
+        // Save categories
+        self.save_data()?;
+        
+        Ok(())
+    }
+
+    pub fn delete_category(&mut self, idx: usize) -> Result<()> {
+        if idx >= self.categories.len() {
+            return Err(anyhow::anyhow!("Invalid category index"));
+        }
+
+        self.categories.remove(idx);
+        if !self.categories.is_empty() && self.selected_category.is_some() {
+            if self.selected_category.unwrap() >= self.categories.len() {
+                self.selected_category = Some(self.categories.len() - 1);
+            }
+        } else {
+            self.selected_category = None;
+        }
+
+        // Save categories
+        self.save_data()?;
+        
+        Ok(())
+    }
+
+    pub fn rename_category(&mut self, idx: usize, new_name: &str) -> Result<()> {
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            return Err(anyhow::anyhow!("Category name cannot be empty"));
+        }
+
+        // Check if another category already has this name
+        if self.categories.iter().enumerate().any(|(i, c)| i != idx && c.name == new_name) {
+            return Err(anyhow::anyhow!("Category with this name already exists"));
+        }
+
+        if idx < self.categories.len() {
+            self.categories[idx].rename(new_name);
+            self.save_data()?;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Invalid category index"))
+        }
+    }
+
+    pub fn assign_feed_to_category(&mut self, feed_url: &str, category_idx: usize) -> Result<()> {
+        if category_idx >= self.categories.len() {
+            return Err(anyhow::anyhow!("Invalid category index"));
+        }
+
+        // Add feed to the selected category
+        self.categories[category_idx].add_feed(feed_url);
+        
+        // Save the updated categories
+        self.save_data()?;
+        
+        Ok(())
+    }
+
+    pub fn remove_feed_from_category(&mut self, feed_url: &str, category_idx: usize) -> Result<()> {
+        if category_idx >= self.categories.len() {
+            return Err(anyhow::anyhow!("Invalid category index"));
+        }
+
+        let removed = self.categories[category_idx].remove_feed(feed_url);
+        if removed {
+            self.save_data()?;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Feed not found in category"))
+        }
+    }
+
+    pub fn toggle_category_expanded(&mut self, idx: usize) -> Result<()> {
+        if idx < self.categories.len() {
+            self.categories[idx].toggle_expanded();
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Invalid category index"))
+        }
+    }
+
+    pub fn get_feeds_by_category(&self) -> HashMap<Option<String>, Vec<(usize, &Feed)>> {
+        let mut result = HashMap::new();
+        
+        // Add 'Uncategorized' group
+        result.insert(None, Vec::new());
+        
+        // Prepare category name lookup by feed URL
+        let feed_to_category: HashMap<&str, &str> = self.categories.iter()
+            .flat_map(|cat| cat.feeds.iter().map(move |url| (url.as_str(), cat.name.as_str())))
+            .collect();
+        
+        // Group feeds by their category
+        for (idx, feed) in self.feeds.iter().enumerate() {
+            let category_name = feed_to_category.get(feed.url.as_str()).map(|&name| name.to_string());
+            result.entry(category_name).or_insert_with(Vec::new).push((idx, feed));
+        }
+        
+        result
+    }
+
+    // When managing categories in UI
+    pub fn get_category_for_feed(&self, feed_url: &str) -> Option<usize> {
+        self.categories.iter().position(|c| c.contains_feed(feed_url))
+    }
+    
+    // Helper to get all feeds in a category
+    pub fn get_feeds_in_category(&self, category_idx: usize) -> Vec<(usize, &Feed)> {
+        if category_idx >= self.categories.len() {
+            return Vec::new();
+        }
+        
+        let category = &self.categories[category_idx];
+        self.feeds.iter().enumerate()
+            .filter(|(_, feed)| category.contains_feed(&feed.url))
+            .collect()
+    }
+    
+    // Get uncategorized feeds
+    pub fn get_uncategorized_feeds(&self) -> Vec<(usize, &Feed)> {
+        // Create a set of all feeds that are in categories
+        let categorized_feeds: std::collections::HashSet<&str> = self.categories.iter()
+            .flat_map(|cat| cat.feeds.iter().map(|url| url.as_str()))
+            .collect();
+        
+        // Return feeds that aren't in any category
+        self.feeds.iter().enumerate()
+            .filter(|(_, feed)| !categorized_feeds.contains(feed.url.as_str()))
+            .collect()
     }
 }

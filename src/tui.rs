@@ -1,8 +1,8 @@
-use crate::app::{App, InputMode, TimeFilter, View};
+use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
 use crate::ui;
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -90,38 +90,48 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.input_mode = InputMode::FilterMode;
                     }
                     KeyCode::Char('c') => {
-                        // Get available categories
-                        let categories = app.get_available_categories();
-
-                        if categories.is_empty() {
-                            // No categories available, toggle off if on
-                            app.filter_options.category = None;
-                        } else {
-                            // Cycle through available categories
-                            if app.filter_options.category.is_none() {
-                                // Set to first category
-                                app.filter_options.category = Some(categories[0].clone());
+                        if key.modifiers.contains(KeyModifiers::CONTROL) {
+                            // Switch to category management view
+                            app.view = View::CategoryManagement;
+                            app.selected_category = if !app.categories.is_empty() {
+                                Some(0)
                             } else {
-                                // Find current index and move to next
-                                let current = app.filter_options.category.as_ref().unwrap();
-                                let current_idx = categories.iter().position(|c| c == current);
+                                None
+                            };
+                        } else {
+                            // Get available categories
+                            let categories = app.get_available_categories();
 
-                                if let Some(idx) = current_idx {
-                                    if idx < categories.len() - 1 {
-                                        // Move to next category
-                                        app.filter_options.category =
-                                            Some(categories[idx + 1].clone());
-                                    } else {
-                                        // Wrap around to None
-                                        app.filter_options.category = None;
-                                    }
-                                } else {
-                                    // Current category not found, set to first
+                            if categories.is_empty() {
+                                // No categories available, toggle off if on
+                                app.filter_options.category = None;
+                            } else {
+                                // Cycle through available categories
+                                if app.filter_options.category.is_none() {
+                                    // Set to first category
                                     app.filter_options.category = Some(categories[0].clone());
+                                } else {
+                                    // Find current index and move to next
+                                    let current = app.filter_options.category.as_ref().unwrap();
+                                    let current_idx = categories.iter().position(|c| c == current);
+
+                                    if let Some(idx) = current_idx {
+                                        if idx < categories.len() - 1 {
+                                            // Move to next category
+                                            app.filter_options.category =
+                                                Some(categories[idx + 1].clone());
+                                        } else {
+                                            // Wrap around to None
+                                            app.filter_options.category = None;
+                                        }
+                                    } else {
+                                        // Current category not found, set to first
+                                        app.filter_options.category = Some(categories[0].clone());
+                                    }
                                 }
                             }
+                            app.apply_filters();
                         }
-                        app.apply_filters();
                     }
                     KeyCode::Tab => {
                         // Check if shift modifier is pressed
@@ -282,6 +292,26 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             app.view = View::FeedItems;
                         }
                     }
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Switch to category management view
+                        app.view = View::CategoryManagement;
+                        app.selected_category = if !app.categories.is_empty() {
+                            Some(0)
+                        } else {
+                            None
+                        };
+                    }
+                    KeyCode::Char('c') if app.selected_feed.is_some() && 
+                                        !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Assign the selected feed to a category
+                        if let Some(feed_idx) = app.selected_feed {
+                            if feed_idx < app.feeds.len() {
+                                let feed_url = app.feeds[feed_idx].url.clone();
+                                app.category_action = Some(CategoryAction::AddFeedToCategory(feed_url));
+                                app.view = View::CategoryManagement;
+                            }
+                        }
+                    }
                     _ => {}
                 },
                 View::FeedItems => match key.code {
@@ -380,6 +410,92 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     _ => {}
                 },
+                View::CategoryManagement => {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            // Return to previous view
+                            app.view = View::FeedList;
+                            app.category_action = None;
+                        }
+                        KeyCode::Char('n') => {
+                            // Create a new category
+                            app.input.clear();
+                            app.category_action = Some(CategoryAction::Create);
+                            app.input_mode = InputMode::CategoryNameInput;
+                        }
+                        KeyCode::Char('e') if app.selected_category.is_some() => {
+                            // Rename the selected category
+                            if let Some(idx) = app.selected_category {
+                                if idx < app.categories.len() {
+                                    app.input = app.categories[idx].name.clone();
+                                    app.category_action = Some(CategoryAction::Rename(idx));
+                                    app.input_mode = InputMode::CategoryNameInput;
+                                }
+                            }
+                        }
+                        KeyCode::Char('d') if app.selected_category.is_some() => {
+                            // Delete the selected category
+                            if let Some(idx) = app.selected_category {
+                                if let Err(e) = app.delete_category(idx) {
+                                    app.error = Some(format!("Failed to delete category: {}", e));
+                                }
+                            }
+                        }
+                        KeyCode::Enter => {
+                            // Add feed to category if that's the current action
+                            if let Some(CategoryAction::AddFeedToCategory(ref feed_url)) = app.category_action.clone() {
+                                if let Some(idx) = app.selected_category {
+                                    if let Err(e) = app.assign_feed_to_category(&feed_url, idx) {
+                                        app.error = Some(format!("Failed to assign feed to category: {}", e));
+                                    } else {
+                                        // Success, go back to feed list
+                                        app.view = View::FeedList;
+                                        app.category_action = None;
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Up => {
+                            // Select previous category
+                            if let Some(selected) = app.selected_category {
+                                if selected > 0 {
+                                    app.selected_category = Some(selected - 1);
+                                }
+                            } else if !app.categories.is_empty() {
+                                app.selected_category = Some(0);
+                            }
+                        }
+                        KeyCode::Down => {
+                            // Select next category
+                            if let Some(selected) = app.selected_category {
+                                if selected < app.categories.len() - 1 {
+                                    app.selected_category = Some(selected + 1);
+                                }
+                            } else if !app.categories.is_empty() {
+                                app.selected_category = Some(0);
+                            }
+                        }
+                        KeyCode::Char(' ') if app.selected_category.is_some() => {
+                            // Toggle category expanded/collapsed
+                            if let Some(idx) = app.selected_category {
+                                if let Err(e) = app.toggle_category_expanded(idx) {
+                                    app.error = Some(format!("Failed to toggle category: {}", e));
+                                }
+                            }
+                        }
+                        KeyCode::Char('r') => {
+                            // Remove a feed from the selected category
+                            if let Some(CategoryAction::AddFeedToCategory(ref feed_url)) = app.category_action.clone() {
+                                if let Some(idx) = app.selected_category {
+                                    if let Err(e) = app.remove_feed_from_category(&feed_url, idx) {
+                                        app.error = Some(format!("Failed to remove feed from category: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             },
             InputMode::InsertUrl => match key.code {
                 KeyCode::Enter => {
@@ -497,6 +613,52 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 }
                 _ => {}
             },
+            InputMode::CategoryNameInput => {
+                match key.code {
+                    KeyCode::Enter => {
+                        // Process category name input
+                        match app.category_action.clone() {
+                            Some(CategoryAction::Create) => {
+                                let input = app.input.clone();
+                                if let Err(e) = app.create_category(&input) {
+                                    app.error = Some(format!("Failed to create category: {}", e));
+                                }
+                            }
+                            Some(CategoryAction::Rename(idx)) => {
+                                let input = app.input.clone();
+                                if let Err(e) = app.rename_category(idx, &input) {
+                                    app.error = Some(format!("Failed to rename category: {}", e));
+                                }
+                            }
+                            _ => {}
+                        }
+                        app.input.clear();
+                        app.input_mode = InputMode::Normal;
+                    }
+                    KeyCode::Esc => {
+                        // Cancel the operation
+                        app.input.clear();
+                        app.input_mode = InputMode::Normal;
+                        app.category_action = None;
+                    }
+                    KeyCode::Backspace => {
+                        app.input.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.input.push(c);
+                    }
+                    _ => {}
+                }
+            },
+            InputMode::CategoryMode => {
+                // Handle category mode key events
+                match key.code {
+                    KeyCode::Esc => {
+                        app.input_mode = InputMode::Normal;
+                    }
+                    _ => {}
+                }
+            }
         }
     }
     Ok(false)
