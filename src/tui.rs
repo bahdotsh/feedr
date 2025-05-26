@@ -2,7 +2,7 @@ use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
 use crate::ui;
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -81,6 +81,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 
 fn handle_events(app: &mut App) -> Result<bool> {
     if let Event::Key(key) = event::read()? {
+        if matches!(key.kind, KeyEventKind::Release) {
+            return Ok(false)
+        }
         match app.input_mode {
             InputMode::Normal => match app.view {
                 View::Dashboard => match key.code {
