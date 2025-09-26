@@ -1,0 +1,281 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION=${{ github.event.inputs.tag }}
+        else
+          VERSION=${GITHUB_REF#refs/tags/}
+        fi
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Version: ${VERSION}"
+
+    - name: Install git-cliff
+      uses: taiki-e/install-action@v2
+      with:
+        tool: git-cliff
+
+    - name: Generate changelog
+      id: git-cliff
+      run: |
+        # Generate changelog for the current version
+        git cliff --tag ${{ steps.get_version.outputs.version }} --strip header > CHANGELOG_CURRENT.md
+
+        # Also update the full changelog
+        git cliff --output CHANGELOG.md
+
+        # Set output for GitHub release
+        {
+          echo 'content<<EOF'
+          cat CHANGELOG_CURRENT.md
+          echo EOF
+        } >> $GITHUB_OUTPUT
+
+    - name: Upload changelog artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: changelog
+        path: |
+          CHANGELOG.md
+          CHANGELOG_CURRENT.md
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.version }}
+        release_name: Feedr ${{ steps.get_version.outputs.version }}
+        body: |
+          ${{ steps.git-cliff.outputs.content }}
+
+          ## 📦 Installation
+
+          Download the appropriate binary for your platform from the assets below.
+
+          ### From Binary
+          ```bash
+          # Linux/macOS
+          chmod +x feedr-*
+          ./feedr-*
+
+          # Windows
+          feedr-*.exe
+          ```
+
+          ### From Source
+          ```bash
+          cargo install --git https://github.com/bahdotsh/feedr.git --tag ${{ steps.get_version.outputs.version }}
+          ```
+
+          ## ✨ Features
+
+          * 📰 Support for RSS 2.0, RSS 1.0, and Atom feeds
+          * 🔍 Advanced filtering by category, date, author, and content length
+          * 📂 Category management with expandable folders
+          * 🔎 Global search across all feeds and items
+          * 📖 Read status tracking
+          * 🌐 Open articles in browser
+          * 💾 Persistent data storage
+          * 🎨 Modern terminal UI with intuitive navigation
+          * 🗂️ Better compression support for feeds
+          * 🛡️ Enhanced error handling and debugging
+
+          ## 🎮 Quick Start
+
+          ```bash
+          # Add your first feed
+          feedr
+          # Press 'a' and enter: https://news.ycombinator.com/rss
+          # Use Tab/Arrow keys to navigate
+          # Press 'q' to quit
+          ```
+
+          **Full documentation**: https://github.com/bahdotsh/feedr#readme
+        draft: false
+        prerelease: false
+
+  build:
+    name: Build Release Binaries
+    runs-on: ${{ matrix.os }}
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: feedr
+            asset_name: feedr-linux-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact_name: feedr
+            asset_name: feedr-linux-x86_64-musl
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: feedr.exe
+            asset_name: feedr-windows-x86_64.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: feedr
+            asset_name: feedr-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: feedr
+            asset_name: feedr-macos-aarch64
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.target }}
+
+    - name: Install musl tools
+      if: matrix.target == 'x86_64-unknown-linux-musl'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+
+    - name: Build release binary
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Strip binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        if command -v strip > /dev/null 2>&1; then
+          strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        fi
+
+    - name: Upload binary to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        asset_name: ${{ matrix.asset_name }}
+        asset_content_type: application/octet-stream
+
+  build-archives:
+    name: Build Release Archives
+    runs-on: ubuntu-latest
+    needs: [create-release, build]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build source archive
+      run: |
+        git archive --format=tar.gz --prefix=feedr-${{ needs.create-release.outputs.version }}/ HEAD > feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
+
+    - name: Upload source archive
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
+        asset_name: feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
+        asset_content_type: application/gzip
+
+  checksums:
+    name: Generate Checksums
+    runs-on: ubuntu-latest
+    needs: [create-release, build, build-archives]
+    steps:
+    - name: Download release assets
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          // Get release info
+          const release = await github.rest.repos.getReleaseByTag({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag: '${{ needs.create-release.outputs.version }}'
+          });
+
+          // Download all assets
+          const assets = release.data.assets;
+          for (const asset of assets) {
+            console.log(`Downloading ${asset.name}...`);
+            const response = await github.rest.repos.getReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              asset_id: asset.id,
+              headers: {
+                Accept: 'application/octet-stream'
+              }
+            });
+
+            fs.writeFileSync(asset.name, Buffer.from(response.data));
+          }
+
+    - name: Generate checksums
+      run: |
+        echo "# Checksums for Feedr ${{ needs.create-release.outputs.version }}" > CHECKSUMS.txt
+        echo "" >> CHECKSUMS.txt
+        echo "## SHA256" >> CHECKSUMS.txt
+        echo "" >> CHECKSUMS.txt
+        for file in feedr-*; do
+          if [ -f "$file" ]; then
+            echo "$(sha256sum "$file")" >> CHECKSUMS.txt
+          fi
+        done
+        echo "" >> CHECKSUMS.txt
+        echo "## MD5" >> CHECKSUMS.txt
+        echo "" >> CHECKSUMS.txt
+        for file in feedr-*; do
+          if [ -f "$file" ]; then
+            echo "$(md5sum "$file")" >> CHECKSUMS.txt
+          fi
+        done
+
+    - name: Upload checksums
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: CHECKSUMS.txt
+        asset_name: CHECKSUMS.txt
+        asset_content_type: text/plain
