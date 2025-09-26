@@ -180,10 +180,11 @@ impl FeedItem {
         // Extract content/description - prefer content over summary
         let description = if let Some(content) = entry.content.as_ref() {
             Some(content.body.clone().unwrap_or_default())
-        } else if let Some(summary) = entry.summary.as_ref() {
-            Some(summary.content.clone())
         } else {
-            None
+            entry
+                .summary
+                .as_ref()
+                .map(|summary| summary.content.clone())
         };
 
         // Extract the primary link

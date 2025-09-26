@@ -98,6 +98,12 @@ struct SavedData {
     read_items: Vec<String>,
 }
 
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl App {
     pub fn new() -> Self {
         let saved_data = Self::load_saved_data().unwrap_or_else(|_| SavedData {
