@@ -49,60 +49,11 @@ jobs:
     - name: Generate changelog
       id: git-cliff
       run: |
-        # Generate changelog for the current version
-        git cliff --tag ${{ steps.get_version.outputs.version }} --strip header > TEMP_CHANGELOG.md
+        # Generate changelog for the current version only
+        git cliff --tag ${{ steps.get_version.outputs.version }} --strip header > CHANGELOG_CURRENT.md
 
         # Also update the full changelog
         git cliff --output CHANGELOG.md
-
-        # Create a comprehensive release notes file
-        cat > CHANGELOG_CURRENT.md << 'EOF'
-        $(cat TEMP_CHANGELOG.md)
-
-        ## 📦 Installation
-
-        Download the appropriate binary for your platform from the assets below.
-
-        ### From Binary
-        ```bash
-        # Linux/macOS
-        chmod +x feedr-*
-        ./feedr-*
-
-        # Windows
-        feedr-*.exe
-        ```
-
-        ### From Source
-        ```bash
-        cargo install --git https://github.com/bahdotsh/feedr.git --tag ${{ steps.get_version.outputs.version }}
-        ```
-
-        ## ✨ Features
-
-        * 📰 Support for RSS 2.0, RSS 1.0, and Atom feeds
-        * 🔍 Advanced filtering by category, date, author, and content length
-        * 📂 Category management with expandable folders
-        * 🔎 Global search across all feeds and items
-        * 📖 Read status tracking
-        * 🌐 Open articles in browser
-        * 💾 Persistent data storage
-        * 🎨 Modern terminal UI with intuitive navigation
-        * 🗂️ Better compression support for feeds
-        * 🛡️ Enhanced error handling and debugging
-
-        ## 🎮 Quick Start
-
-        ```bash
-        # Add your first feed
-        feedr
-        # Press 'a' and enter: https://news.ycombinator.com/rss
-        # Use Tab/Arrow keys to navigate
-        # Press 'q' to quit
-        ```
-
-        **Full documentation**: https://github.com/bahdotsh/feedr#readme
-        EOF
 
     - name: Upload changelog artifacts
       uses: actions/upload-artifact@v4
