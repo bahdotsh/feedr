@@ -12,7 +12,7 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 - **Smart Search**: Quickly find content across all your feeds
 - **Browser Integration**: Open articles in your default browser
 
-## 🚀 Installation
+## Installation
 
 ### Prerequisites
 
@@ -90,7 +90,7 @@ feedr
 | `Home` | Go to dashboard |
 | `o` | Open item in browser |
 
-## 🧩 Dependencies
+## Dependencies
 
 - **[ratatui](https://github.com/ratatui-org/ratatui)**: Terminal UI framework
 - **[crossterm](https://github.com/crossterm-rs/crossterm)**: Terminal manipulation
@@ -104,7 +104,7 @@ feedr
 
 MIT
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
