@@ -86,10 +86,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact_name: feedr
             asset_name: feedr-linux-x86_64
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            artifact_name: feedr
-            asset_name: feedr-linux-x86_64-musl
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: feedr.exe
