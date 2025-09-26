@@ -19,7 +19,6 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
     steps:
     - name: Checkout repository
@@ -45,17 +44,59 @@ jobs:
       id: git-cliff
       run: |
         # Generate changelog for the current version
-        git cliff --tag ${{ steps.get_version.outputs.version }} --strip header > CHANGELOG_CURRENT.md
+        git cliff --tag ${{ steps.get_version.outputs.version }} --strip header > TEMP_CHANGELOG.md
 
         # Also update the full changelog
         git cliff --output CHANGELOG.md
 
-        # Set output for GitHub release
-        {
-          echo 'content<<EOF'
-          cat CHANGELOG_CURRENT.md
-          echo EOF
-        } >> $GITHUB_OUTPUT
+        # Create a comprehensive release notes file
+        cat > CHANGELOG_CURRENT.md << 'EOF'
+        $(cat TEMP_CHANGELOG.md)
+
+        ## 📦 Installation
+
+        Download the appropriate binary for your platform from the assets below.
+
+        ### From Binary
+        ```bash
+        # Linux/macOS
+        chmod +x feedr-*
+        ./feedr-*
+
+        # Windows
+        feedr-*.exe
+        ```
+
+        ### From Source
+        ```bash
+        cargo install --git https://github.com/bahdotsh/feedr.git --tag ${{ steps.get_version.outputs.version }}
+        ```
+
+        ## ✨ Features
+
+        * 📰 Support for RSS 2.0, RSS 1.0, and Atom feeds
+        * 🔍 Advanced filtering by category, date, author, and content length
+        * 📂 Category management with expandable folders
+        * 🔎 Global search across all feeds and items
+        * 📖 Read status tracking
+        * 🌐 Open articles in browser
+        * 💾 Persistent data storage
+        * 🎨 Modern terminal UI with intuitive navigation
+        * 🗂️ Better compression support for feeds
+        * 🛡️ Enhanced error handling and debugging
+
+        ## 🎮 Quick Start
+
+        ```bash
+        # Add your first feed
+        feedr
+        # Press 'a' and enter: https://news.ycombinator.com/rss
+        # Use Tab/Arrow keys to navigate
+        # Press 'q' to quit
+        ```
+
+        **Full documentation**: https://github.com/bahdotsh/feedr#readme
+        EOF
 
     - name: Upload changelog artifacts
       uses: actions/upload-artifact@v4
@@ -67,58 +108,13 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.get_version.outputs.version }}
-        release_name: Feedr ${{ steps.get_version.outputs.version }}
-        body: |
-          ${{ steps.git-cliff.outputs.content }}
-
-          ## 📦 Installation
-
-          Download the appropriate binary for your platform from the assets below.
-
-          ### From Binary
-          ```bash
-          # Linux/macOS
-          chmod +x feedr-*
-          ./feedr-*
-
-          # Windows
-          feedr-*.exe
-          ```
-
-          ### From Source
-          ```bash
-          cargo install --git https://github.com/bahdotsh/feedr.git --tag ${{ steps.get_version.outputs.version }}
-          ```
-
-          ## ✨ Features
-
-          * 📰 Support for RSS 2.0, RSS 1.0, and Atom feeds
-          * 🔍 Advanced filtering by category, date, author, and content length
-          * 📂 Category management with expandable folders
-          * 🔎 Global search across all feeds and items
-          * 📖 Read status tracking
-          * 🌐 Open articles in browser
-          * 💾 Persistent data storage
-          * 🎨 Modern terminal UI with intuitive navigation
-          * 🗂️ Better compression support for feeds
-          * 🛡️ Enhanced error handling and debugging
-
-          ## 🎮 Quick Start
-
-          ```bash
-          # Add your first feed
-          feedr
-          # Press 'a' and enter: https://news.ycombinator.com/rss
-          # Use Tab/Arrow keys to navigate
-          # Press 'q' to quit
-          ```
-
-          **Full documentation**: https://github.com/bahdotsh/feedr#readme
+        name: Feedr ${{ steps.get_version.outputs.version }}
+        body_path: CHANGELOG_CURRENT.md
         draft: false
         prerelease: false
 
@@ -181,14 +177,12 @@ jobs:
         fi
 
     - name: Upload binary to release
-      uses: actions/upload-release-asset@v1
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
-        asset_name: ${{ matrix.asset_name }}
-        asset_content_type: application/octet-stream
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
   build-archives:
     name: Build Release Archives
@@ -206,14 +200,12 @@ jobs:
         git archive --format=tar.gz --prefix=feedr-${{ needs.create-release.outputs.version }}/ HEAD > feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
 
     - name: Upload source archive
-      uses: actions/upload-release-asset@v1
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
-        asset_name: feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
-        asset_content_type: application/gzip
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
 
   checksums:
     name: Generate Checksums
@@ -271,11 +263,9 @@ jobs:
         done
 
     - name: Upload checksums
-      uses: actions/upload-release-asset@v1
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: CHECKSUMS.txt
-        asset_name: CHECKSUMS.txt
-        asset_content_type: text/plain
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: CHECKSUMS.txt
