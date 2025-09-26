@@ -14,6 +14,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   create-release:
     name: Create Release
@@ -23,6 +27,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Get version
       id: get_version
@@ -108,15 +114,15 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.get_version.outputs.version }}
         name: Feedr ${{ steps.get_version.outputs.version }}
         body_path: CHANGELOG_CURRENT.md
         draft: false
         prerelease: false
+        make_latest: true
+        fail_on_unmatched_files: true
 
   build:
     name: Build Release Binaries
@@ -177,9 +183,7 @@ jobs:
         fi
 
     - name: Upload binary to release
-      uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ needs.create-release.outputs.version }}
         files: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
@@ -200,9 +204,7 @@ jobs:
         git archive --format=tar.gz --prefix=feedr-${{ needs.create-release.outputs.version }}/ HEAD > feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
 
     - name: Upload source archive
-      uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ needs.create-release.outputs.version }}
         files: feedr-${{ needs.create-release.outputs.version }}-source.tar.gz
@@ -263,9 +265,7 @@ jobs:
         done
 
     - name: Upload checksums
-      uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ needs.create-release.outputs.version }}
         files: CHECKSUMS.txt
