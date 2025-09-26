@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct FilterOptions {
@@ -48,7 +47,6 @@ pub enum InputMode {
     InsertUrl,
     SearchMode,
     FilterMode,
-    CategoryMode,     // For category management
     CategoryNameInput, // For creating/renaming categories
 }
 
@@ -107,7 +105,7 @@ impl App {
             categories: vec![],
             read_items: vec![],
         });
-        
+
         let mut app = Self {
             feeds: Vec::new(),
             bookmarks: saved_data.bookmarks,
@@ -329,35 +327,34 @@ impl App {
     pub fn update_dashboard(&mut self) {
         // Clear existing dashboard items
         self.dashboard_items.clear();
-        
+
         // Get all feeds and sort by most recent first
         let mut all_items = Vec::new();
-        
+
         for (feed_idx, feed) in self.feeds.iter().enumerate() {
             for (item_idx, item) in feed.items.iter().enumerate() {
-                let date = item.pub_date.as_ref().and_then(|date_str| {
-                    DateTime::parse_from_rfc2822(date_str).ok()
-                });
-                
+                let date = item
+                    .pub_date
+                    .as_ref()
+                    .and_then(|date_str| DateTime::parse_from_rfc2822(date_str).ok());
+
                 all_items.push((feed_idx, item_idx, date));
             }
         }
-        
+
         // Sort by date (most recent first)
-        all_items.sort_by(|a, b| {
-            match (&a.2, &b.2) {
-                (Some(a_date), Some(b_date)) => b_date.cmp(a_date),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            }
+        all_items.sort_by(|a, b| match (&a.2, &b.2) {
+            (Some(a_date), Some(b_date)) => b_date.cmp(a_date),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
         });
-        
+
         // Add items to dashboard (limited to most recent 100 for performance)
         for (feed_idx, item_idx, _) in all_items.into_iter().take(100) {
             self.dashboard_items.push((feed_idx, item_idx));
         }
-        
+
         // Apply any active filters
         self.apply_filters();
     }
@@ -369,10 +366,10 @@ impl App {
             self.bookmarks.push(url.to_string());
         }
         self.update_dashboard();
-        
+
         // Save data
         self.save_data()?;
-        
+
         Ok(())
     }
 
@@ -380,20 +377,20 @@ impl App {
         if let Some(idx) = self.selected_feed {
             if idx < self.feeds.len() {
                 let url = self.feeds[idx].url.clone();
-                
+
                 // Remove from feeds
                 self.feeds.remove(idx);
-                
+
                 // Remove from bookmarks
                 if let Some(pos) = self.bookmarks.iter().position(|x| x == &url) {
                     self.bookmarks.remove(pos);
                 }
-                
+
                 // Remove from all categories
                 for category in &mut self.categories {
                     category.remove_feed(&url);
                 }
-                
+
                 // Update selected feed
                 if !self.feeds.is_empty() {
                     if idx >= self.feeds.len() {
@@ -403,15 +400,15 @@ impl App {
                     self.selected_feed = None;
                     self.view = View::Dashboard;
                 }
-                
+
                 // Update dashboard
                 self.update_dashboard();
-                
+
                 // Save changes
                 self.save_data()?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -467,7 +464,7 @@ impl App {
                         || item
                             .description
                             .as_ref()
-                            .map_or(false, |d| d.to_lowercase().contains(&self.search_query))
+                            .is_some_and(|d| d.to_lowercase().contains(&self.search_query))
                     {
                         self.filtered_items.push((feed_idx, item_idx));
                     }
@@ -652,10 +649,10 @@ impl App {
         let category = FeedCategory::new(name);
         self.categories.push(category);
         self.selected_category = Some(self.categories.len() - 1);
-        
+
         // Save categories
         self.save_data()?;
-        
+
         Ok(())
     }
 
@@ -675,7 +672,7 @@ impl App {
 
         // Save categories
         self.save_data()?;
-        
+
         Ok(())
     }
 
@@ -686,7 +683,12 @@ impl App {
         }
 
         // Check if another category already has this name
-        if self.categories.iter().enumerate().any(|(i, c)| i != idx && c.name == new_name) {
+        if self
+            .categories
+            .iter()
+            .enumerate()
+            .any(|(i, c)| i != idx && c.name == new_name)
+        {
             return Err(anyhow::anyhow!("Category with this name already exists"));
         }
 
@@ -706,10 +708,10 @@ impl App {
 
         // Add feed to the selected category
         self.categories[category_idx].add_feed(feed_url);
-        
+
         // Save the updated categories
         self.save_data()?;
-        
+
         Ok(())
     }
 
@@ -736,53 +738,10 @@ impl App {
         }
     }
 
-    pub fn get_feeds_by_category(&self) -> HashMap<Option<String>, Vec<(usize, &Feed)>> {
-        let mut result = HashMap::new();
-        
-        // Add 'Uncategorized' group
-        result.insert(None, Vec::new());
-        
-        // Prepare category name lookup by feed URL
-        let feed_to_category: HashMap<&str, &str> = self.categories.iter()
-            .flat_map(|cat| cat.feeds.iter().map(move |url| (url.as_str(), cat.name.as_str())))
-            .collect();
-        
-        // Group feeds by their category
-        for (idx, feed) in self.feeds.iter().enumerate() {
-            let category_name = feed_to_category.get(feed.url.as_str()).map(|&name| name.to_string());
-            result.entry(category_name).or_insert_with(Vec::new).push((idx, feed));
-        }
-        
-        result
-    }
-
     // When managing categories in UI
     pub fn get_category_for_feed(&self, feed_url: &str) -> Option<usize> {
-        self.categories.iter().position(|c| c.contains_feed(feed_url))
-    }
-    
-    // Helper to get all feeds in a category
-    pub fn get_feeds_in_category(&self, category_idx: usize) -> Vec<(usize, &Feed)> {
-        if category_idx >= self.categories.len() {
-            return Vec::new();
-        }
-        
-        let category = &self.categories[category_idx];
-        self.feeds.iter().enumerate()
-            .filter(|(_, feed)| category.contains_feed(&feed.url))
-            .collect()
-    }
-    
-    // Get uncategorized feeds
-    pub fn get_uncategorized_feeds(&self) -> Vec<(usize, &Feed)> {
-        // Create a set of all feeds that are in categories
-        let categorized_feeds: std::collections::HashSet<&str> = self.categories.iter()
-            .flat_map(|cat| cat.feeds.iter().map(|url| url.as_str()))
-            .collect();
-        
-        // Return feeds that aren't in any category
-        self.feeds.iter().enumerate()
-            .filter(|(_, feed)| !categorized_feeds.contains(feed.url.as_str()))
-            .collect()
+        self.categories
+            .iter()
+            .position(|c| c.contains_feed(feed_url))
     }
 }

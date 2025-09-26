@@ -2,7 +2,9 @@ use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
 use crate::ui;
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -82,7 +84,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 fn handle_events(app: &mut App) -> Result<bool> {
     if let Event::Key(key) = event::read()? {
         if matches!(key.kind, KeyEventKind::Release) {
-            return Ok(false)
+            return Ok(false);
         }
         match app.input_mode {
             InputMode::Normal => match app.view {
@@ -304,13 +306,16 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             None
                         };
                     }
-                    KeyCode::Char('c') if app.selected_feed.is_some() && 
-                                        !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    KeyCode::Char('c')
+                        if app.selected_feed.is_some()
+                            && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
                         // Assign the selected feed to a category
                         if let Some(feed_idx) = app.selected_feed {
                             if feed_idx < app.feeds.len() {
                                 let feed_url = app.feeds[feed_idx].url.clone();
-                                app.category_action = Some(CategoryAction::AddFeedToCategory(feed_url));
+                                app.category_action =
+                                    Some(CategoryAction::AddFeedToCategory(feed_url));
                                 app.view = View::CategoryManagement;
                             }
                         }
@@ -446,10 +451,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         }
                         KeyCode::Enter => {
                             // Add feed to category if that's the current action
-                            if let Some(CategoryAction::AddFeedToCategory(ref feed_url)) = app.category_action.clone() {
+                            if let Some(CategoryAction::AddFeedToCategory(ref feed_url)) =
+                                app.category_action.clone()
+                            {
                                 if let Some(idx) = app.selected_category {
-                                    if let Err(e) = app.assign_feed_to_category(&feed_url, idx) {
-                                        app.error = Some(format!("Failed to assign feed to category: {}", e));
+                                    if let Err(e) = app.assign_feed_to_category(feed_url, idx) {
+                                        app.error = Some(format!(
+                                            "Failed to assign feed to category: {}",
+                                            e
+                                        ));
                                     } else {
                                         // Success, go back to feed list
                                         app.view = View::FeedList;
@@ -488,10 +498,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         }
                         KeyCode::Char('r') => {
                             // Remove a feed from the selected category
-                            if let Some(CategoryAction::AddFeedToCategory(ref feed_url)) = app.category_action.clone() {
+                            if let Some(CategoryAction::AddFeedToCategory(ref feed_url)) =
+                                app.category_action.clone()
+                            {
                                 if let Some(idx) = app.selected_category {
-                                    if let Err(e) = app.remove_feed_from_category(&feed_url, idx) {
-                                        app.error = Some(format!("Failed to remove feed from category: {}", e));
+                                    if let Err(e) = app.remove_feed_from_category(feed_url, idx) {
+                                        app.error = Some(format!(
+                                            "Failed to remove feed from category: {}",
+                                            e
+                                        ));
                                     }
                                 }
                             }
@@ -649,15 +664,6 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     KeyCode::Char(c) => {
                         app.input.push(c);
-                    }
-                    _ => {}
-                }
-            },
-            InputMode::CategoryMode => {
-                // Handle category mode key events
-                match key.code {
-                    KeyCode::Esc => {
-                        app.input_mode = InputMode::Normal;
                     }
                     _ => {}
                 }

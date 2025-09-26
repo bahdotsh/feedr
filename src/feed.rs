@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rss::{Channel, Item};
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,10 +53,6 @@ impl FeedCategory {
         self.feeds.contains(url)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.feeds.is_empty()
-    }
-
     pub fn feed_count(&self) -> usize {
         self.feeds.len()
     }
@@ -85,7 +81,7 @@ impl Feed {
         let items = channel
             .items()
             .iter()
-            .map(|item| FeedItem::from_rss_item(item))
+            .map(FeedItem::from_rss_item)
             .collect();
 
         Ok(Feed {
