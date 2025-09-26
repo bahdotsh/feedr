@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rss::{Channel, Item};
+use feed_rs::parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
@@ -68,46 +68,137 @@ impl FeedCategory {
 
 impl Feed {
     pub fn from_url(url: &str) -> Result<Self> {
-        let content = reqwest::blocking::Client::new()
+        let client = reqwest::blocking::Client::builder()
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .timeout(Duration::from_secs(15))
+            .build()
+            .context("Failed to create HTTP client")?;
+
+        let response = client
             .get(url)
-            .timeout(Duration::from_secs(10))
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)",
+            )
+            .header(
+                "Accept",
+                "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+            )
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Accept-Encoding", "gzip, deflate")
+            .header("Cache-Control", "no-cache")
+            .header("Connection", "keep-alive")
             .send()
-            .context("Failed to fetch feed")?
-            .bytes()
-            .context("Failed to read response body")?;
+            .context("Failed to fetch feed")?;
 
-        let channel = Channel::read_from(&content[..]).context("Failed to parse RSS feed")?;
+        // Check if we got redirected or have an unusual status
+        let final_url = response.url().clone();
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|ct| ct.to_str().ok())
+            .unwrap_or("unknown")
+            .to_lowercase();
 
-        let items = channel
-            .items()
-            .iter()
-            .map(FeedItem::from_rss_item)
-            .collect();
+        if !status.is_success() {
+            return Err(anyhow::anyhow!(
+                "HTTP error {}: Failed to fetch feed from {}",
+                status,
+                url
+            ));
+        }
+
+        let content = response.bytes().context("Failed to read response body")?;
+
+        // Debug: Check if we got HTML instead of XML
+        if content.len() < 100 {
+            return Err(anyhow::anyhow!(
+                "Response too short ({} bytes), might be empty or an error page",
+                content.len()
+            ));
+        }
+
+        let content_start = String::from_utf8_lossy(&content[..std::cmp::min(200, content.len())]);
+        if content_start.trim_start().starts_with("<!DOCTYPE html")
+            || content_start.trim_start().starts_with("<html")
+        {
+            return Err(anyhow::anyhow!(
+                "Received HTML page instead of RSS/Atom feed. URL might be incorrect or require authentication. Final URL: {}",
+                final_url
+            ));
+        }
+
+        let feed = parser::parse(&content[..])
+            .with_context(|| {
+                let content_preview = String::from_utf8_lossy(&content[..std::cmp::min(300, content.len())]);
+                format!(
+                    "Failed to parse feed (RSS/Atom) from URL: {} (final URL: {}, {} bytes, content-type: {}, preview: {})",
+                    url, final_url, content.len(), content_type, content_preview.trim()
+                )
+            })?;
+
+        let items = feed.entries.iter().map(FeedItem::from_feed_entry).collect();
 
         Ok(Feed {
             url: url.to_string(),
-            title: channel.title().to_string(),
+            title: feed
+                .title
+                .map(|t| t.content)
+                .unwrap_or_else(|| "Untitled Feed".to_string()),
             items,
         })
     }
 }
 
 impl FeedItem {
-    fn from_rss_item(item: &Item) -> Self {
-        // Format the date for better display
-        let formatted_date = item.pub_date().and_then(|date_str| {
-            DateTime::parse_from_rfc2822(date_str)
-                .ok()
-                .map(|dt| format_date(dt.with_timezone(&Utc)))
+    fn from_feed_entry(entry: &feed_rs::model::Entry) -> Self {
+        // Extract publication date - try multiple date formats
+        let (pub_date_string, formatted_date) = if let Some(published) = &entry.published {
+            let pub_string = published.to_rfc3339();
+            let formatted = format_date(*published);
+            (Some(pub_string), Some(formatted))
+        } else if let Some(updated) = &entry.updated {
+            let pub_string = updated.to_rfc3339();
+            let formatted = format_date(*updated);
+            (Some(pub_string), Some(formatted))
+        } else {
+            (None, None)
+        };
+
+        // Extract author information
+        let author = entry.authors.first().map(|author| {
+            if !author.name.is_empty() {
+                author.name.clone()
+            } else if let Some(email) = &author.email {
+                email.clone()
+            } else {
+                "Unknown".to_string()
+            }
         });
 
+        // Extract content/description - prefer content over summary
+        let description = if let Some(content) = entry.content.as_ref() {
+            Some(content.body.clone().unwrap_or_default())
+        } else if let Some(summary) = entry.summary.as_ref() {
+            Some(summary.content.clone())
+        } else {
+            None
+        };
+
+        // Extract the primary link
+        let link = entry.links.first().map(|link| link.href.clone());
+
         FeedItem {
-            title: item.title().unwrap_or("Untitled").to_string(),
-            // Using map for Option<&str> to Option<String> conversion
-            link: item.link().map(ToString::to_string),
-            description: item.description().map(ToString::to_string),
-            pub_date: item.pub_date().map(ToString::to_string),
-            author: item.author().map(ToString::to_string),
+            title: entry
+                .title
+                .as_ref()
+                .map(|t| t.content.clone())
+                .unwrap_or_else(|| "Untitled".to_string()),
+            link,
+            description,
+            pub_date: pub_date_string,
+            author,
             formatted_date,
         }
     }

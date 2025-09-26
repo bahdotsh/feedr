@@ -2,13 +2,17 @@
 name = "feedr"
 version = "0.1.0"
 edition = "2021"
-description = "Feedr is a feature-rich terminal-based RSS feed reader written in Rust."
+description = "Feedr is a feature-rich terminal-based RSS/Atom feed reader written in Rust."
 documentation = "https://github.com/bahdotsh/feedr"
 homepage = "https://github.com/bahdotsh/feedr"
 repository = "https://github.com/bahdotsh/feedr"
-keywords = ["rss", "feed-reader", "terminal", "tui", "cli"]
+keywords = ["rss", "atom", "feed-reader", "terminal", "tui"]
 categories = ["command-line-utilities", "text-processing", "web-programming"]
 license = "MIT"
+
+[[bin]]
+name = "feedr"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
@@ -16,8 +20,8 @@ ratatui = "0.23"
 crossterm = "0.27"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.11", features = ["blocking"] }
-rss = "2.0"
+reqwest = { version = "0.11", features = ["blocking", "gzip", "deflate", "brotli"] }
+feed-rs = "2.3"
 dirs = "5.0"
 html2text = "0.6"
 open = "3.2"
