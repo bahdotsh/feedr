@@ -948,6 +948,7 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .padding(Padding::new(1, 1, 1, 1)),
             )
             .style(Style::default().fg(TEXT_COLOR))
+            .scroll((app.detail_vertical_scroll, 0))
             .wrap(Wrap { trim: true });
 
         f.render_widget(content, chunks[1]);
@@ -980,7 +981,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit"
                 }
                 View::FeedItemDetail => {
-                    "h/esc: back | home: dashboard | o: open in browser | q: quit"
+                    "h/esc: back | home: dashboard | o: open in browser | ↑/↓: scroll | q: quit"
                 }
             };
             (help_text, Style::default().fg(TEXT_COLOR))
