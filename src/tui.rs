@@ -387,6 +387,8 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 View::FeedItemDetail => match key.code {
                     KeyCode::Char('q') => return Ok(true),
                     KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
+                        // Reset detail scroll to top when leaving.
+                        app.detail_vertical_scroll = 0;
                         if app.is_searching {
                             // Return to search results
                             app.view = View::Dashboard;
@@ -399,6 +401,14 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Home => {
                         app.view = View::Dashboard;
                         app.selected_item = None;
+                        // Reset detail scroll to top when leaving.
+                        app.detail_vertical_scroll = 0;
+                    }
+                    KeyCode::Up => {
+                        app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(1);
+                    }
+                    KeyCode::Down => {
+                        app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_add(1);
                     }
                     KeyCode::Char('r') => {
                         // Set loading flag before starting refresh

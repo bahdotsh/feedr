@@ -82,6 +82,7 @@ pub struct App {
     pub read_items: Vec<String>, // Track read item IDs
     pub filtered_dashboard_items: Vec<(usize, usize)>, // Filtered items for dashboard
     pub category_action: Option<CategoryAction>, // For category management
+    pub detail_vertical_scroll: u16, // Vertical scroll value for item detail view
 }
 
 #[derive(Clone, Debug)]
@@ -134,6 +135,7 @@ impl App {
             read_items: saved_data.read_items,
             filtered_dashboard_items: Vec::new(),
             category_action: None,
+            detail_vertical_scroll: 0,
         };
 
         // Load bookmarked feeds
