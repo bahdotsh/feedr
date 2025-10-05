@@ -1001,7 +1001,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit"
                 }
                 View::FeedItemDetail => {
-                    "h/esc: back | home: dashboard | o: open in browser | ↑/↓: scroll | PgUp/PgDn: fast scroll | q: quit"
+                    "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast scroll | g: top | G/End: bottom | o: open | q: quit"
                 }
             };
             (help_text, Style::default().fg(TEXT_COLOR))

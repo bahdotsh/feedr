@@ -428,6 +428,18 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         let new_scroll = app.detail_vertical_scroll.saturating_add(10);
                         app.detail_vertical_scroll = new_scroll.min(app.detail_max_scroll);
                     }
+                    KeyCode::Char('g') => {
+                        // Jump to the beginning (vim-style)
+                        app.detail_vertical_scroll = 0;
+                    }
+                    KeyCode::Char('G') => {
+                        // Jump to the end (vim-style with Shift)
+                        app.detail_vertical_scroll = app.detail_max_scroll;
+                    }
+                    KeyCode::End => {
+                        // Jump to the end
+                        app.detail_vertical_scroll = app.detail_max_scroll;
+                    }
                     KeyCode::Char('r') => {
                         // Set loading flag before starting refresh
                         app.is_loading = true;
