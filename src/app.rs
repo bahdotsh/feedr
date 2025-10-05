@@ -83,6 +83,7 @@ pub struct App {
     pub filtered_dashboard_items: Vec<(usize, usize)>, // Filtered items for dashboard
     pub category_action: Option<CategoryAction>, // For category management
     pub detail_vertical_scroll: u16, // Vertical scroll value for item detail view
+    pub detail_max_scroll: u16,      // Maximum scroll value for current content
 }
 
 #[derive(Clone, Debug)]
@@ -136,6 +137,7 @@ impl App {
             filtered_dashboard_items: Vec::new(),
             category_action: None,
             detail_vertical_scroll: 0,
+            detail_max_scroll: 0,
         };
 
         // Load bookmarked feeds
@@ -751,5 +753,19 @@ impl App {
         self.categories
             .iter()
             .position(|c| c.contains_feed(feed_url))
+    }
+
+    /// Update the maximum scroll value based on content height and viewport height
+    pub fn update_detail_max_scroll(&mut self, content_lines: u16, viewport_height: u16) {
+        // Maximum scroll is the content lines minus the viewport height
+        // If content fits in viewport, max scroll is 0
+        self.detail_max_scroll = content_lines.saturating_sub(viewport_height);
+    }
+
+    /// Clamp the current scroll position to valid bounds
+    pub fn clamp_detail_scroll(&mut self) {
+        if self.detail_vertical_scroll > self.detail_max_scroll {
+            self.detail_vertical_scroll = self.detail_max_scroll;
+        }
     }
 }

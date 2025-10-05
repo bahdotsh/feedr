@@ -222,11 +222,13 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 let (feed_idx, item_idx) = app.filtered_items[selected];
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
+                                app.detail_vertical_scroll = 0; // Reset scroll when entering detail view
                                 app.view = View::FeedItemDetail;
                             } else if selected < app.dashboard_items.len() {
                                 let (feed_idx, item_idx) = app.dashboard_items[selected];
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
+                                app.detail_vertical_scroll = 0; // Reset scroll when entering detail view
                                 app.view = View::FeedItemDetail;
                             }
                         }
@@ -364,6 +366,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     KeyCode::Enter => {
                         if app.selected_item.is_some() {
+                            app.detail_vertical_scroll = 0; // Reset scroll when entering detail view
                             app.view = View::FeedItemDetail;
                             if let Some(feed_idx) = app.selected_feed {
                                 if let Some(item_idx) = app.selected_item {
@@ -406,9 +409,24 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     KeyCode::Up => {
                         app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(1);
+                        // Clamping is done in the render function, but we can also clamp here
+                        app.clamp_detail_scroll();
                     }
                     KeyCode::Down => {
-                        app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_add(1);
+                        // Only scroll down if we haven't reached the bottom
+                        if app.detail_vertical_scroll < app.detail_max_scroll {
+                            app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_add(1);
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        // Scroll up by a larger amount (10 lines)
+                        app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(10);
+                        app.clamp_detail_scroll();
+                    }
+                    KeyCode::PageDown => {
+                        // Scroll down by a larger amount (10 lines), but not past the bottom
+                        let new_scroll = app.detail_vertical_scroll.saturating_add(10);
+                        app.detail_vertical_scroll = new_scroll.min(app.detail_max_scroll);
                     }
                     KeyCode::Char('r') => {
                         // Set loading flag before starting refresh
