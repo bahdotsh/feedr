@@ -415,7 +415,8 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Down => {
                         // Only scroll down if we haven't reached the bottom
                         if app.detail_vertical_scroll < app.detail_max_scroll {
-                            app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_add(1);
+                            app.detail_vertical_scroll =
+                                app.detail_vertical_scroll.saturating_add(1);
                         }
                     }
                     KeyCode::PageUp => {

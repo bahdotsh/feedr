@@ -1451,7 +1451,7 @@ fn count_wrapped_lines(text: &str, width: usize) -> u16 {
             if line_width == 0 {
                 line_count = line_count.saturating_add(1);
             } else {
-                let wrapped_lines = ((line_width + width - 1) / width).max(1);
+                let wrapped_lines = line_width.div_ceil(width).max(1);
                 line_count = line_count.saturating_add(wrapped_lines as u16);
             }
         }

@@ -83,7 +83,7 @@ pub struct App {
     pub filtered_dashboard_items: Vec<(usize, usize)>, // Filtered items for dashboard
     pub category_action: Option<CategoryAction>, // For category management
     pub detail_vertical_scroll: u16, // Vertical scroll value for item detail view
-    pub detail_max_scroll: u16,      // Maximum scroll value for current content
+    pub detail_max_scroll: u16,  // Maximum scroll value for current content
 }
 
 #[derive(Clone, Debug)]
