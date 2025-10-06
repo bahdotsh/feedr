@@ -29,7 +29,7 @@ const BORDER_COLOR: Color = Color::DarkGray; // dark gray
 const NORMAL_BORDER: BorderType = BorderType::Rounded;
 const ACTIVE_BORDER: BorderType = BorderType::Thick;
 
-pub fn render<B: Backend>(f: &mut Frame<B>, app: &App) {
+pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     // Set background color for the entire terminal
     let bg_block = Block::default().style(Style::default().bg(BACKGROUND_COLOR));
     f.render_widget(bg_block, f.size());
@@ -791,7 +791,7 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     }
 }
 
-fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect) {
     if let Some(item) = app.current_item() {
         // Split the area into header and content
         let chunks = Layout::default()
@@ -936,6 +936,26 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             "No description available".to_string()
         };
 
+        // Calculate the viewport height (accounting for borders and padding)
+        let viewport_height = chunks[1]
+            .height
+            .saturating_sub(2) // borders (top and bottom)
+            .saturating_sub(2); // padding (top and bottom)
+
+        // Calculate the content width (accounting for borders and padding)
+        let content_width = chunks[1]
+            .width
+            .saturating_sub(2) // borders (left and right)
+            .saturating_sub(2) // padding (left and right)
+            as usize;
+
+        // Calculate the number of lines the wrapped content will take
+        let content_lines = count_wrapped_lines(&description, content_width);
+
+        // Update the max scroll value
+        app.update_detail_max_scroll(content_lines, viewport_height);
+        app.clamp_detail_scroll();
+
         // Create content paragraph with enhanced formatting
         let content = Paragraph::new(description)
             .block(
@@ -948,6 +968,7 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .padding(Padding::new(1, 1, 1, 1)),
             )
             .style(Style::default().fg(TEXT_COLOR))
+            .scroll((app.detail_vertical_scroll, 0))
             .wrap(Wrap { trim: true });
 
         f.render_widget(content, chunks[1]);
@@ -980,7 +1001,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit"
                 }
                 View::FeedItemDetail => {
-                    "h/esc: back | home: dashboard | o: open in browser | q: quit"
+                    "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast scroll | g: top | G/End: bottom | o: open | q: quit"
                 }
             };
             (help_text, Style::default().fg(TEXT_COLOR))
@@ -1410,6 +1431,35 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
             format!("{}...", &s[..max_chars.saturating_sub(3)])
         }
     }
+}
+
+// Helper function to count the number of lines when text is wrapped
+fn count_wrapped_lines(text: &str, width: usize) -> u16 {
+    if width == 0 {
+        return 0;
+    }
+
+    let mut line_count = 0u16;
+
+    for line in text.lines() {
+        if line.is_empty() {
+            // Empty lines still count as one line
+            line_count = line_count.saturating_add(1);
+        } else {
+            // Calculate how many wrapped lines this line will take
+            let line_width = line.width();
+            if line_width == 0 {
+                line_count = line_count.saturating_add(1);
+            } else {
+                let wrapped_lines = line_width.div_ceil(width).max(1);
+                line_count = line_count.saturating_add(wrapped_lines as u16);
+            }
+        }
+    }
+
+    // If text doesn't end with newline, we still have the lines we counted
+    // If text is empty, return at least 1 line
+    line_count.max(1)
 }
 
 // Update the render_category_management function to show feeds when a category is expanded

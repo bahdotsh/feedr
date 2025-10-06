@@ -389,16 +389,46 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
                         if app.is_searching {
                             // Return to search results
-                            app.view = View::Dashboard;
+                            app.exit_detail_view(View::Dashboard);
                             app.selected_item = Some(0);
                         } else {
                             // Return to feed items
-                            app.view = View::FeedItems;
+                            app.exit_detail_view(View::FeedItems);
                         }
                     }
                     KeyCode::Home => {
-                        app.view = View::Dashboard;
+                        app.exit_detail_view(View::Dashboard);
                         app.selected_item = None;
+                    }
+                    KeyCode::Up => {
+                        app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(1);
+                        // Clamping is done in the render function, but we can also clamp here
+                        app.clamp_detail_scroll();
+                    }
+                    KeyCode::Down => {
+                        // Only scroll down if we haven't reached the bottom
+                        if app.detail_vertical_scroll < app.detail_max_scroll {
+                            app.detail_vertical_scroll =
+                                app.detail_vertical_scroll.saturating_add(1);
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        // Scroll up by a larger amount (10 lines)
+                        app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(10);
+                        app.clamp_detail_scroll();
+                    }
+                    KeyCode::PageDown => {
+                        // Scroll down by a larger amount (10 lines), but not past the bottom
+                        let new_scroll = app.detail_vertical_scroll.saturating_add(10);
+                        app.detail_vertical_scroll = new_scroll.min(app.detail_max_scroll);
+                    }
+                    KeyCode::Char('g') => {
+                        // Jump to the beginning (vim-style)
+                        app.detail_vertical_scroll = 0;
+                    }
+                    KeyCode::Char('G') | KeyCode::End => {
+                        // Jump to the end (vim-style with Shift or End key)
+                        app.detail_vertical_scroll = app.detail_max_scroll;
                     }
                     KeyCode::Char('r') => {
                         // Set loading flag before starting refresh
