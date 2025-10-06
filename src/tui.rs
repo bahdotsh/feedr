@@ -222,13 +222,11 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 let (feed_idx, item_idx) = app.filtered_items[selected];
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
-                                app.detail_vertical_scroll = 0; // Reset scroll when entering detail view
                                 app.view = View::FeedItemDetail;
                             } else if selected < app.dashboard_items.len() {
                                 let (feed_idx, item_idx) = app.dashboard_items[selected];
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
-                                app.detail_vertical_scroll = 0; // Reset scroll when entering detail view
                                 app.view = View::FeedItemDetail;
                             }
                         }
@@ -366,7 +364,6 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     KeyCode::Enter => {
                         if app.selected_item.is_some() {
-                            app.detail_vertical_scroll = 0; // Reset scroll when entering detail view
                             app.view = View::FeedItemDetail;
                             if let Some(feed_idx) = app.selected_feed {
                                 if let Some(item_idx) = app.selected_item {
@@ -390,22 +387,18 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 View::FeedItemDetail => match key.code {
                     KeyCode::Char('q') => return Ok(true),
                     KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
-                        // Reset detail scroll to top when leaving.
-                        app.detail_vertical_scroll = 0;
                         if app.is_searching {
                             // Return to search results
-                            app.view = View::Dashboard;
+                            app.exit_detail_view(View::Dashboard);
                             app.selected_item = Some(0);
                         } else {
                             // Return to feed items
-                            app.view = View::FeedItems;
+                            app.exit_detail_view(View::FeedItems);
                         }
                     }
                     KeyCode::Home => {
-                        app.view = View::Dashboard;
+                        app.exit_detail_view(View::Dashboard);
                         app.selected_item = None;
-                        // Reset detail scroll to top when leaving.
-                        app.detail_vertical_scroll = 0;
                     }
                     KeyCode::Up => {
                         app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(1);
@@ -433,12 +426,8 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         // Jump to the beginning (vim-style)
                         app.detail_vertical_scroll = 0;
                     }
-                    KeyCode::Char('G') => {
-                        // Jump to the end (vim-style with Shift)
-                        app.detail_vertical_scroll = app.detail_max_scroll;
-                    }
-                    KeyCode::End => {
-                        // Jump to the end
+                    KeyCode::Char('G') | KeyCode::End => {
+                        // Jump to the end (vim-style with Shift or End key)
                         app.detail_vertical_scroll = app.detail_max_scroll;
                     }
                     KeyCode::Char('r') => {

@@ -768,4 +768,10 @@ impl App {
             self.detail_vertical_scroll = self.detail_max_scroll;
         }
     }
+
+    /// Exit the detail view and reset scroll position
+    pub fn exit_detail_view(&mut self, new_view: View) {
+        self.detail_vertical_scroll = 0;
+        self.view = new_view;
+    }
 }
