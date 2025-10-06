@@ -198,7 +198,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             }
                         }
                     }
-                    KeyCode::Up => {
+                    KeyCode::Up | KeyCode::Char('k') => {
                         if let Some(selected) = app.selected_item {
                             if selected > 0 {
                                 app.selected_item = Some(selected - 1);
@@ -207,7 +207,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             app.selected_item = Some(0);
                         }
                     }
-                    KeyCode::Down => {
+                    KeyCode::Down | KeyCode::Char('j') => {
                         if let Some(selected) = app.selected_item {
                             if selected < app.dashboard_items.len() - 1 {
                                 app.selected_item = Some(selected + 1);
@@ -273,7 +273,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         // Refresh completed
                         app.is_loading = false;
                     }
-                    KeyCode::Up => {
+                    KeyCode::Up | KeyCode::Char('k') => {
                         if let Some(selected) = app.selected_feed {
                             if selected > 0 {
                                 app.selected_feed = Some(selected - 1);
@@ -282,7 +282,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             app.selected_feed = Some(0);
                         }
                     }
-                    KeyCode::Down => {
+                    KeyCode::Down | KeyCode::Char('j') => {
                         if let Some(selected) = app.selected_feed {
                             if selected < app.feeds.len() - 1 {
                                 app.selected_feed = Some(selected + 1);
@@ -347,14 +347,14 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         // Refresh completed
                         app.is_loading = false;
                     }
-                    KeyCode::Up => {
+                    KeyCode::Up | KeyCode::Char('k') => {
                         if let Some(selected) = app.selected_item {
                             if selected > 0 {
                                 app.selected_item = Some(selected - 1);
                             }
                         }
                     }
-                    KeyCode::Down => {
+                    KeyCode::Down | KeyCode::Char('j') => {
                         if let Some(selected) = app.selected_item {
                             let feed = app.current_feed().unwrap();
                             if selected < feed.items.len() - 1 {
@@ -400,24 +400,28 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.exit_detail_view(View::Dashboard);
                         app.selected_item = None;
                     }
-                    KeyCode::Up => {
+                    KeyCode::Up | KeyCode::Char('k') => {
                         app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(1);
                         // Clamping is done in the render function, but we can also clamp here
                         app.clamp_detail_scroll();
                     }
-                    KeyCode::Down => {
+                    KeyCode::Down | KeyCode::Char('j') => {
                         // Only scroll down if we haven't reached the bottom
                         if app.detail_vertical_scroll < app.detail_max_scroll {
                             app.detail_vertical_scroll =
                                 app.detail_vertical_scroll.saturating_add(1);
                         }
                     }
-                    KeyCode::PageUp => {
+                    KeyCode::PageUp | KeyCode::Char('u')
+                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
                         // Scroll up by a larger amount (10 lines)
                         app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(10);
                         app.clamp_detail_scroll();
                     }
-                    KeyCode::PageDown => {
+                    KeyCode::PageDown | KeyCode::Char('d')
+                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
                         // Scroll down by a larger amount (10 lines), but not past the bottom
                         let new_scroll = app.detail_vertical_scroll.saturating_add(10);
                         app.detail_vertical_scroll = new_scroll.min(app.detail_max_scroll);
