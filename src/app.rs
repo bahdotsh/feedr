@@ -383,6 +383,38 @@ impl App {
         Ok(())
     }
 
+    fn opml_dfs(outline: &opml::Outline) -> Vec<String> {
+        let mut urls = Vec::<String>::new();
+        match &outline.xml_url {
+            Some(url) => urls.push(url.to_string()),
+            None => (),
+        }
+        for o in &outline.outlines {
+            urls.append(&mut Self::opml_dfs(o));
+        }
+        urls
+    }
+
+    pub fn import_opml(&mut self, file_path: &str) -> Result<()> {
+        let mut opml_file = match std::fs::File::open(file_path) {
+            Ok(f) => f,
+            Err(e) => return Err(anyhow::anyhow!("Opening file {}. {}", file_path, e)),
+        };
+        let opml_data = match opml::OPML::from_reader(&mut opml_file) {
+            Ok(opml) => opml,
+            Err(e) => return Err(anyhow::anyhow!("OPML decode error. {}", e)),
+        };
+        for feed_list in opml_data.body.outlines {
+            for feed in Self::opml_dfs(&feed_list) {
+                match self.add_feed(&feed) {
+                    Ok(_) => println!("Feed {} added", feed),
+                    Err(e) => eprintln!("Error adding {}: {}", feed, e),
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn remove_current_feed(&mut self) -> Result<()> {
         if let Some(idx) = self.selected_feed {
             if idx < self.feeds.len() {
