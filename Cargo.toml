@@ -29,6 +29,7 @@ chrono = "0.4"
 unicode-width = "0.1.11"
 uuid = { version = "1.4", features = ["v4", "serde"] }
 clap = { version = "4.0", features = ["derive"] }
+opml = "1.1.6"
 
 [profile.release]
 codegen-units = 1
