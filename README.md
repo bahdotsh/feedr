@@ -4,6 +4,10 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 
 ![Feedr Terminal RSS Reader](assets/images/feedr.png)
 
+## Demo
+
+![Feedr Demo](demo.gif)
+
 ## Features
 
 - **Dashboard View**: See the latest articles across all your feeds
