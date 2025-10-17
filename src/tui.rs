@@ -44,7 +44,8 @@ pub fn run(mut app: App) -> Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     let mut last_tick = std::time::Instant::now();
-    let tick_rate = Duration::from_millis(100); // 100ms for smooth animation
+    let tick_rate = Duration::from_millis(app.config.ui.tick_rate);
+    let error_timeout = Duration::from_millis(app.config.ui.error_display_timeout);
 
     loop {
         terminal.draw(|f| ui::render(f, app))?;
@@ -55,9 +56,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                 .checked_sub(last_tick.elapsed())
                 .unwrap_or_else(|| Duration::from_secs(0))
         } else if app.error.is_some() {
-            Duration::from_millis(3000)
+            error_timeout
         } else {
-            Duration::from_millis(100)
+            tick_rate
         };
 
         if event::poll(timeout)? {
@@ -72,7 +73,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
             }
 
             // Clear error after timeout
-            if app.error.is_some() && last_tick.elapsed() >= Duration::from_millis(3000) {
+            if app.error.is_some() && last_tick.elapsed() >= error_timeout {
                 app.error = None;
             }
 

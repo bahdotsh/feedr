@@ -4,13 +4,15 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 
 ![Feedr Terminal RSS Reader](assets/images/feedr.png)
 
-## ✨ Features
+## Features
 
 - **Dashboard View**: See the latest articles across all your feeds
 - **Feed Management**: Subscribe to and organize multiple RSS feeds
 - **Rich Content Display**: Beautiful formatting of articles with HTML-to-text conversion
 - **Smart Search**: Quickly find content across all your feeds
 - **Browser Integration**: Open articles in your default browser
+- **Configurable**: Customize timeouts, UI behavior, and default feeds via TOML config file
+- **XDG Compliant**: Follows standard directory specifications for configuration and data storage
 
 ## Installation
 
@@ -32,7 +34,7 @@ cargo build --release
 
 The binary will be available at `target/release/feedr`.
 
-## 🎮 Usage
+## Usage
 
 Run the application:
 
@@ -90,6 +92,76 @@ feedr
 | `Home` | Go to dashboard |
 | `o` | Open item in browser |
 
+## Configuration
+
+Feedr supports customization through a TOML configuration file that follows XDG Base Directory specifications.
+
+### Configuration File Location
+
+- **Linux/macOS**: `~/.config/feedr/config.toml`
+- **Windows**: `%APPDATA%\feedr\config.toml`
+
+The configuration file is automatically generated with default values on first run if it doesn't exist.
+
+### Available Settings
+
+```toml
+# Feedr Configuration File
+
+[general]
+max_dashboard_items = 100      # Maximum number of items shown on dashboard
+auto_refresh_interval = 0      # Auto-refresh interval in seconds (0 = disabled)
+
+[network]
+http_timeout = 15              # HTTP request timeout in seconds
+user_agent = "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)"
+
+[ui]
+tick_rate = 100                # UI update rate in milliseconds
+error_display_timeout = 3000   # Error message duration in milliseconds
+
+# Optional: Define default feeds to load on first run
+[[default_feeds]]
+url = "https://example.com/feed.xml"
+category = "News"
+```
+
+### Configuration Options Explained
+
+#### General Settings
+- **max_dashboard_items**: Controls how many items are displayed on the dashboard (default: 100)
+- **auto_refresh_interval**: Automatically refresh feeds at specified interval in seconds (0 disables auto-refresh)
+
+#### Network Settings
+- **http_timeout**: Timeout for HTTP requests when fetching feeds (useful for slow connections)
+- **user_agent**: Custom User-Agent string for HTTP requests
+
+#### UI Settings
+- **tick_rate**: How frequently the UI updates in milliseconds (lower = more responsive, higher = less CPU usage)
+- **error_display_timeout**: How long error messages are displayed in milliseconds
+
+#### Default Feeds
+You can define feeds to be automatically loaded on first run:
+```toml
+[[default_feeds]]
+url = "https://news.ycombinator.com/rss"
+category = "Tech"
+
+[[default_feeds]]
+url = "https://example.com/feed.xml"
+category = "News"
+```
+
+### Data Storage
+
+Feedr stores your bookmarks, categories, and read items in:
+- **Linux/macOS**: `~/.local/share/feedr/feedr_data.json`
+- **Windows**: `%LOCALAPPDATA%\feedr\feedr_data.json`
+
+### Backwards Compatibility
+
+Feedr automatically migrates data from older versions to the new XDG-compliant locations. Your existing data will be preserved and automatically moved to the correct location on first run.
+
 ## Dependencies
 
 - **[ratatui](https://github.com/ratatui-org/ratatui)**: Terminal UI framework
@@ -100,7 +172,7 @@ feedr
 - **[chrono](https://github.com/chronotope/chrono)**: Date and time handling
 - **[serde](https://github.com/serde-rs/serde)**: Serialization/deserialization
 
-## 📜 License
+## License
 
 MIT
 
