@@ -4,8 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Main configuration structure for Feedr
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -101,7 +100,6 @@ impl Default for UiConfig {
         }
     }
 }
-
 
 impl Config {
     /// Load configuration from the XDG config directory
