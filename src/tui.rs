@@ -77,6 +77,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                 app.error = None;
             }
 
+            // Check if auto-refresh should trigger
+            if app.should_auto_refresh() {
+                // Note: refresh_feeds() is synchronous and will block,
+                // but it updates the loading state for visual feedback
+                let _ = app.refresh_feeds();
+            }
+
             last_tick = std::time::Instant::now();
         }
     }
