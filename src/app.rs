@@ -385,9 +385,8 @@ impl App {
 
     fn opml_dfs(outline: &opml::Outline) -> Vec<String> {
         let mut urls = Vec::<String>::new();
-        match &outline.xml_url {
-            Some(url) => urls.push(url.to_string()),
-            None => (),
+        if let Some(url) = &outline.xml_url {
+            urls.push(url.to_string())
         }
         for o in &outline.outlines {
             urls.append(&mut Self::opml_dfs(o));
