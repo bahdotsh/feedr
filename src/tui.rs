@@ -184,6 +184,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         // Refresh completed
                         app.is_loading = false;
                     }
+                    KeyCode::Char('t') => {
+                        // Toggle theme
+                        if let Err(e) = app.toggle_theme() {
+                            app.error = Some(format!("Failed to toggle theme: {}", e));
+                        } else {
+                            app.success_message = Some("Theme toggled".to_string());
+                            app.success_message_time = Some(std::time::Instant::now());
+                        }
+                    }
                     KeyCode::Char('/') => {
                         app.input.clear();
                         app.input_mode = InputMode::SearchMode;
@@ -339,6 +348,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         // Refresh completed
                         app.is_loading = false;
                     }
+                    KeyCode::Char('t') => {
+                        // Toggle theme
+                        if let Err(e) = app.toggle_theme() {
+                            app.error = Some(format!("Failed to toggle theme: {}", e));
+                        } else {
+                            app.success_message = Some("Theme toggled".to_string());
+                            app.success_message_time = Some(std::time::Instant::now());
+                        }
+                    }
                     KeyCode::Up | KeyCode::Char('k') => {
                         if let Some(selected) = app.selected_feed {
                             if selected > 0 {
@@ -413,6 +431,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         // Refresh completed
                         app.is_loading = false;
                     }
+                    KeyCode::Char('t') => {
+                        // Toggle theme
+                        if let Err(e) = app.toggle_theme() {
+                            app.error = Some(format!("Failed to toggle theme: {}", e));
+                        } else {
+                            app.success_message = Some("Theme toggled".to_string());
+                            app.success_message_time = Some(std::time::Instant::now());
+                        }
+                    }
                     KeyCode::Up | KeyCode::Char('k') => {
                         if let Some(selected) = app.selected_item {
                             if selected > 0 {
@@ -485,6 +512,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Home => {
                         app.exit_detail_view(View::Dashboard);
                         app.selected_item = None;
+                    }
+                    KeyCode::Char('t') => {
+                        // Toggle theme
+                        if let Err(e) = app.toggle_theme() {
+                            app.error = Some(format!("Failed to toggle theme: {}", e));
+                        } else {
+                            app.success_message = Some("Theme toggled".to_string());
+                            app.success_message_time = Some(std::time::Instant::now());
+                        }
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
                         app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(1);
@@ -564,6 +600,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             // Return to previous view
                             app.view = View::FeedList;
                             app.category_action = None;
+                        }
+                        KeyCode::Char('t') => {
+                            // Toggle theme
+                            if let Err(e) = app.toggle_theme() {
+                                app.error = Some(format!("Failed to toggle theme: {}", e));
+                            } else {
+                                app.success_message = Some("Theme toggled".to_string());
+                                app.success_message_time = Some(std::time::Instant::now());
+                            }
                         }
                         KeyCode::Char('n') => {
                             // Create a new category

@@ -980,6 +980,21 @@ impl App {
             std::time::Duration::from_secs(0)
         }
     }
+
+    /// Toggle between light and dark themes
+    pub fn toggle_theme(&mut self) -> Result<()> {
+        use crate::config::Theme;
+
+        self.config.ui.theme = match self.config.ui.theme {
+            Theme::Dark => Theme::Light,
+            Theme::Light => Theme::Dark,
+        };
+
+        // Save the updated config
+        self.config.save()?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

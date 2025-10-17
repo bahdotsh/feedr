@@ -50,6 +50,22 @@ pub struct UiConfig {
     /// Error message display timeout in milliseconds
     #[serde(default = "default_error_timeout")]
     pub error_display_timeout: u64,
+    /// Color theme (light or dark)
+    #[serde(default)]
+    pub theme: Theme,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Light,
+    Dark,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self::Dark
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -109,6 +125,7 @@ impl Default for UiConfig {
         Self {
             tick_rate: default_tick_rate(),
             error_display_timeout: default_error_timeout(),
+            theme: Theme::default(),
         }
     }
 }
@@ -185,11 +202,18 @@ impl Config {
              # - refresh_rate_limit_delay: Delay in milliseconds between requests to same domain (default: 2000ms)\n\
              #   This prevents \"too many requests\" errors, especially for Reddit feeds\n\
              #\n\
+             # UI Theme Settings:\n\
+             # - theme: Choose between \"light\" or \"dark\" theme (default: dark)\n\
+             #   You can also toggle the theme in the app by pressing 't'\n\
+             #\n\
              # Example configuration for auto-refresh every 5 minutes:\n\
              # [general]\n\
              # refresh_enabled = true\n\
              # auto_refresh_interval = 300\n\
              # refresh_rate_limit_delay = 2000\n\
+             #\n\
+             # [ui]\n\
+             # theme = \"light\"\n\
              #\n\
              # Example default feeds configuration:\n\
              # [[default_feeds]]\n\

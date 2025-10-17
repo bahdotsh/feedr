@@ -1,4 +1,5 @@
 use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
+use crate::config::Theme;
 use html2text::from_read;
 use ratatui::{
     backend::Backend,
@@ -15,75 +16,137 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-// Define a refined color palette inspired by modern terminal themes
-const PRIMARY_COLOR: Color = Color::Cyan; // blue
-const SECONDARY_COLOR: Color = Color::Magenta; // purple
-const HIGHLIGHT_COLOR: Color = Color::Green; // mint
-const BACKGROUND_COLOR: Color = Color::Black; // charcoal
-const TEXT_COLOR: Color = Color::White; // off-white
-const MUTED_COLOR: Color = Color::DarkGray; // steel gray
-const ACCENT_COLOR: Color = Color::Yellow; // gold
-const ERROR_COLOR: Color = Color::Red; // rose
-const BORDER_COLOR: Color = Color::DarkGray; // dark gray
-
 const NORMAL_BORDER: BorderType = BorderType::Rounded;
-const ACTIVE_BORDER: BorderType = BorderType::Thick;
+const ACTIVE_BORDER: BorderType = BorderType::Double;
+const FOCUS_BORDER: BorderType = BorderType::Thick;
+
+/// Color scheme for the UI - supports both light and dark themes
+#[derive(Clone, Debug)]
+pub struct ColorScheme {
+    pub primary: Color,
+    pub secondary: Color,
+    pub highlight: Color,
+    pub success: Color,
+    pub background: Color,
+    pub surface: Color,
+    pub selected_bg: Color,
+    pub text: Color,
+    pub text_secondary: Color,
+    pub muted: Color,
+    pub accent: Color,
+    pub error: Color,
+    pub border: Color,
+    pub border_focus: Color,
+}
+
+impl ColorScheme {
+    /// Dark theme - the original modern refined color palette
+    pub fn dark() -> Self {
+        Self {
+            primary: Color::Rgb(100, 181, 246),        // Soft blue
+            secondary: Color::Rgb(171, 130, 255),      // Soft purple
+            highlight: Color::Rgb(129, 212, 250),      // Bright cyan
+            success: Color::Rgb(102, 187, 106),        // Soft green
+            background: Color::Rgb(18, 18, 18),        // Deep charcoal
+            surface: Color::Rgb(28, 28, 30),           // Slightly lighter surface
+            selected_bg: Color::Rgb(42, 48, 62),       // Subtle blue-gray
+            text: Color::Rgb(230, 230, 230),           // Soft white
+            text_secondary: Color::Rgb(158, 158, 158), // Medium gray
+            muted: Color::Rgb(97, 97, 97),             // Muted gray
+            accent: Color::Rgb(255, 202, 40),          // Warm gold
+            error: Color::Rgb(239, 83, 80),            // Vibrant red
+            border: Color::Rgb(60, 60, 60),            // Subtle border
+            border_focus: Color::Rgb(100, 181, 246),   // Focused border
+        }
+    }
+
+    /// Light theme - optimized for readability in bright environments
+    pub fn light() -> Self {
+        Self {
+            primary: Color::Rgb(25, 118, 210),      // Deeper blue
+            secondary: Color::Rgb(123, 31, 162),    // Deep purple
+            highlight: Color::Rgb(2, 136, 209),     // Teal blue
+            success: Color::Rgb(56, 142, 60),       // Forest green
+            background: Color::Rgb(250, 250, 250),  // Off-white
+            surface: Color::Rgb(255, 255, 255),     // Pure white
+            selected_bg: Color::Rgb(224, 242, 254), // Light blue selection
+            text: Color::Rgb(33, 33, 33),           // Dark gray text
+            text_secondary: Color::Rgb(97, 97, 97), // Medium gray
+            muted: Color::Rgb(158, 158, 158),       // Light gray
+            accent: Color::Rgb(245, 124, 0),        // Orange accent
+            error: Color::Rgb(211, 47, 47),         // Deep red
+            border: Color::Rgb(189, 189, 189),      // Light border
+            border_focus: Color::Rgb(25, 118, 210), // Focused border
+        }
+    }
+
+    /// Get the color scheme for the given theme
+    pub fn from_theme(theme: &Theme) -> Self {
+        match theme {
+            Theme::Dark => Self::dark(),
+            Theme::Light => Self::light(),
+        }
+    }
+}
 
 pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+    // Get the color scheme based on the current theme
+    let colors = ColorScheme::from_theme(&app.config.ui.theme);
+
     // Set background color for the entire terminal
-    let bg_block = Block::default().style(Style::default().bg(BACKGROUND_COLOR));
+    let bg_block = Block::default().style(Style::default().bg(colors.background));
     f.render_widget(bg_block, f.size());
 
-    // Main layout division
+    // Main layout division with better spacing
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
-            Constraint::Length(3), // Title/tab bar
+            Constraint::Length(4), // Title/tab bar (slightly taller)
             Constraint::Min(0),    // Main content
-            Constraint::Length(3), // Help bar
+            Constraint::Length(4), // Help bar (slightly taller for breathing room)
         ])
         .split(f.size());
 
-    render_title_bar(f, app, chunks[0]);
+    render_title_bar(f, app, chunks[0], &colors);
 
     match app.view {
-        View::Dashboard => render_dashboard(f, app, chunks[1]),
-        View::FeedList => render_feed_list(f, app, chunks[1]),
-        View::FeedItems => render_feed_items(f, app, chunks[1]),
-        View::FeedItemDetail => render_item_detail(f, app, chunks[1]),
-        View::CategoryManagement => render_category_management(f, app, chunks[1]),
+        View::Dashboard => render_dashboard(f, app, chunks[1], &colors),
+        View::FeedList => render_feed_list(f, app, chunks[1], &colors),
+        View::FeedItems => render_feed_items(f, app, chunks[1], &colors),
+        View::FeedItemDetail => render_item_detail(f, app, chunks[1], &colors),
+        View::CategoryManagement => render_category_management(f, app, chunks[1], &colors),
     }
 
-    render_help_bar(f, app, chunks[2]);
+    render_help_bar(f, app, chunks[2], &colors);
 
     // Show error if present
     if let Some(error) = &app.error {
-        render_error_modal(f, error);
+        render_error_modal(f, error, &colors);
     }
 
     // Show success notification if present
     if let Some(success) = &app.success_message {
-        render_success_notification(f, success);
+        render_success_notification(f, success, &colors);
     }
 
     // Show input modal when in input modes
     if matches!(app.input_mode, InputMode::InsertUrl | InputMode::SearchMode) {
-        render_input_modal(f, app);
+        render_input_modal(f, app, &colors);
     }
 
     // Show filter modal when in filter mode
     if app.filter_mode {
-        render_filter_modal(f, app);
+        render_filter_modal(f, app, &colors);
     }
 
     // Show category input modal when in category name input mode
     if app.input_mode == InputMode::CategoryNameInput {
-        render_category_input_modal(f, app);
+        render_category_input_modal(f, app, &colors);
     }
 }
 
-fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     // Create tabs for navigation
     let titles = ["Dashboard", "Feeds", "Items", "Detail", "Categories"];
     let selected_tab = match app.view {
@@ -94,34 +157,34 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         View::CategoryManagement => 4,
     };
 
-    // Loading animation characters - smoother spinner
-    let loading_symbols = ["◐", "◓", "◑", "◒"];
+    // Enhanced loading animation with better symbols
+    let loading_symbols = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
     // Create title with loading indicator if loading
     let title = if app.is_loading {
         format!(
-            " {} Loading... ",
-            loading_symbols[app.loading_indicator % 4]
+            " {} Refreshing feeds... ",
+            loading_symbols[app.loading_indicator % loading_symbols.len()]
         )
     } else {
         " 📰 Feedr ".to_string()
     };
 
-    // Create tab highlight effect
+    // Create tab highlight effect with better visual distinction
     let tabs = Tabs::new(
         titles
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let prefix = if i == selected_tab { "▪ " } else { "  " };
+                let prefix = if i == selected_tab { "● " } else { "  " };
                 Line::from(vec![Span::styled(
                     format!("{}{}", prefix, t),
                     if i == selected_tab {
                         Style::default()
-                            .fg(HIGHLIGHT_COLOR)
+                            .fg(colors.highlight)
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(MUTED_COLOR)
+                        Style::default().fg(colors.text_secondary)
                     },
                 )])
             })
@@ -135,19 +198,27 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             } else {
                 NORMAL_BORDER
             })
-            .border_style(Style::default().fg(PRIMARY_COLOR))
+            .border_style(Style::default().fg(if app.is_loading {
+                colors.highlight
+            } else {
+                colors.border
+            }))
             .title(title)
             .title_alignment(Alignment::Center)
-            .padding(Padding::new(1, 0, 0, 0)),
+            .padding(Padding::new(2, 2, 0, 0)),
     )
-    .style(Style::default().fg(MUTED_COLOR))
+    .style(
+        Style::default()
+            .fg(colors.text_secondary)
+            .bg(colors.surface),
+    )
     .select(selected_tab)
     .divider(symbols::line::VERTICAL);
 
     f.render_widget(tabs, area);
 }
 
-fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     let mut title = if app.is_searching {
         format!(" 🔍 Search Results: '{}' ", app.search_query)
     } else {
@@ -228,40 +299,40 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
                         Style::default()
-                            .fg(ACCENT_COLOR)
+                            .fg(colors.accent)
                             .add_modifier(Modifier::BOLD),
                     )]));
                 } else if line.contains("Press") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(HIGHLIGHT_COLOR),
+                        Style::default().fg(colors.highlight),
                     )]));
                 } else if line.contains("Some suggestions") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
                         Style::default()
-                            .fg(SECONDARY_COLOR)
+                            .fg(colors.secondary)
                             .add_modifier(Modifier::BOLD),
                     )]));
                 } else if line.contains("•") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(PRIMARY_COLOR),
+                        Style::default().fg(colors.primary),
                     )]));
                 } else if line.contains("Get started") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(TEXT_COLOR),
+                        Style::default().fg(colors.text),
                     )]));
                 } else if line.contains("━") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(BORDER_COLOR),
+                        Style::default().fg(colors.border),
                     )]));
                 } else if line.contains("███") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(PRIMARY_COLOR),
+                        Style::default().fg(colors.primary),
                     )]));
                 } else {
                     text.lines.push(Line::from(line));
@@ -273,17 +344,19 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 if line.contains("🔍") || line.contains("📭") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(SECONDARY_COLOR),
+                        Style::default().fg(colors.secondary),
                     )]));
                 } else if line.contains("No results") || line.contains("No recent") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(colors.text)
+                            .add_modifier(Modifier::BOLD),
                     )]));
                 } else {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(MUTED_COLOR),
+                        Style::default().fg(colors.muted),
                     )]));
                 }
             }
@@ -295,8 +368,9 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_type(NORMAL_BORDER)
-                .border_style(Style::default().fg(PRIMARY_COLOR))
-                .padding(Padding::new(1, 1, 1, 1)),
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 2, 2, 2)),
         );
 
         f.render_widget(paragraph, area);
@@ -309,22 +383,24 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         text.lines.push(Line::from(""));
         text.lines.push(Line::from(Span::styled(
             "       🔍       ",
-            Style::default().fg(SECONDARY_COLOR),
+            Style::default().fg(colors.secondary),
         )));
         text.lines.push(Line::from(""));
         text.lines.push(Line::from(Span::styled(
             "No items match your current filters",
-            Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(colors.text)
+                .add_modifier(Modifier::BOLD),
         )));
         text.lines.push(Line::from(""));
         text.lines.push(Line::from(Span::styled(
             app.get_filter_summary(),
-            Style::default().fg(SECONDARY_COLOR),
+            Style::default().fg(colors.secondary),
         )));
         text.lines.push(Line::from(""));
         text.lines.push(Line::from(Span::styled(
             "Press 'f' to adjust filters or 'r' to refresh feeds",
-            Style::default().fg(HIGHLIGHT_COLOR),
+            Style::default().fg(colors.highlight),
         )));
 
         let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
@@ -333,15 +409,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_type(NORMAL_BORDER)
-                .border_style(Style::default().fg(PRIMARY_COLOR))
-                .padding(Padding::new(1, 1, 1, 1)),
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 2, 2, 2)),
         );
 
         f.render_widget(paragraph, area);
         return;
     }
 
-    // For non-empty dashboard, create richly formatted items
+    // For non-empty dashboard, create richly formatted items with modern styling
     let items: Vec<ListItem> = items_to_display
         .iter()
         .enumerate()
@@ -356,37 +433,41 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             let is_selected = app.selected_item == Some(idx);
             let is_read = app.is_item_read(feed_idx, item_idx);
 
-            // Create clearer visual group with feed name as header
+            // Create clearer visual group with better hierarchy
             ListItem::new(vec![
-                // Feed source with icon - more prominent
+                // Feed source with modern indicator
                 Line::from(vec![
                     Span::styled(
-                        if is_selected { "► " } else { "● " },
-                        Style::default().fg(if is_selected {
-                            HIGHLIGHT_COLOR
-                        } else if is_read {
-                            MUTED_COLOR // Use muted color for read items
-                        } else {
-                            PRIMARY_COLOR
-                        }),
+                        if is_selected { "▸ " } else { "  " },
+                        Style::default().fg(colors.highlight),
                     ),
                     Span::styled(
-                        format!("[{}]", feed.title),
+                        feed.title.to_string(),
                         Style::default()
-                            .fg(SECONDARY_COLOR)
+                            .fg(if is_selected {
+                                colors.secondary
+                            } else {
+                                colors.text_secondary
+                            })
                             .add_modifier(Modifier::BOLD),
                     ),
+                    Span::styled(
+                        if is_read { " ✓" } else { "" },
+                        Style::default().fg(colors.success),
+                    ),
                 ]),
-                // Item title - more prominent
+                // Item title - cleaner layout
                 Line::from(vec![
-                    Span::styled("  │ ", Style::default().fg(BORDER_COLOR)),
+                    Span::styled("  ", Style::default()),
                     Span::styled(
                         &item.title,
                         Style::default()
                             .fg(if is_selected {
-                                HIGHLIGHT_COLOR
+                                colors.text
+                            } else if is_read {
+                                colors.text_secondary
                             } else {
-                                TEXT_COLOR
+                                colors.text
                             })
                             .add_modifier(if is_selected {
                                 Modifier::BOLD
@@ -395,19 +476,18 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                             }),
                     ),
                 ]),
-                // Publication date with icon
+                // Publication date with subtle styling
                 Line::from(vec![
-                    Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                    Span::styled("🕒 ", Style::default().fg(PRIMARY_COLOR)),
-                    Span::styled(date_str, Style::default().fg(MUTED_COLOR)),
+                    Span::styled("  ", Style::default()),
+                    Span::styled(date_str, Style::default().fg(colors.muted)),
                 ]),
-                // Empty line for spacing between items
+                // Spacing between items
                 Line::from(""),
             ])
-            .style(Style::default().fg(TEXT_COLOR).bg(if is_selected {
-                Color::Rgb(59, 66, 82)
+            .style(Style::default().fg(colors.text).bg(if is_selected {
+                colors.selected_bg
             } else {
-                BACKGROUND_COLOR
+                colors.background
             }))
         })
         .collect();
@@ -419,16 +499,17 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_type(NORMAL_BORDER)
-                .border_style(Style::default().fg(PRIMARY_COLOR))
-                .padding(Padding::new(1, 0, 0, 0)),
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 1, 1, 1)),
         )
         .highlight_style(
             Style::default()
-                .bg(Color::Rgb(59, 66, 82)) // Slightly lighter than background
-                .fg(HIGHLIGHT_COLOR)
+                .bg(colors.selected_bg)
+                .fg(colors.highlight)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(" ► ");
+        .highlight_symbol("");
 
     let mut state = ratatui::widgets::ListState::default();
     state.select(app.selected_item);
@@ -436,7 +517,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     f.render_stateful_widget(dashboard_list, area, &mut state);
 }
 
-fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(0)])
@@ -445,11 +526,11 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let title_text = vec![
         Line::from(Span::styled(
             "  Add your RSS/Atom feeds to get started  ",
-            Style::default().fg(MUTED_COLOR),
+            Style::default().fg(colors.muted),
         )),
         Line::from(Span::styled(
             "  Press 'a' to add a feed                  ",
-            Style::default().fg(HIGHLIGHT_COLOR),
+            Style::default().fg(colors.highlight),
         )),
     ];
 
@@ -466,61 +547,63 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         // Stylized ASCII robot penguin
         text.lines.push(Line::from(Span::styled(
             "                                           ",
-            Style::default().fg(MUTED_COLOR),
+            Style::default().fg(colors.muted),
         )));
         text.lines.push(Line::from(Span::styled(
             "       .---.                               ",
-            Style::default().fg(PRIMARY_COLOR),
+            Style::default().fg(colors.primary),
         )));
         text.lines.push(Line::from(vec![
-            Span::styled("      |", Style::default().fg(PRIMARY_COLOR)),
-            Span::styled("o_o", Style::default().fg(ACCENT_COLOR)),
+            Span::styled("      |", Style::default().fg(colors.primary)),
+            Span::styled("o_o", Style::default().fg(colors.accent)),
             Span::styled(
                 " |                              ",
-                Style::default().fg(PRIMARY_COLOR),
+                Style::default().fg(colors.primary),
             ),
         ]));
         text.lines.push(Line::from(vec![
-            Span::styled("      |", Style::default().fg(PRIMARY_COLOR)),
-            Span::styled(":_/", Style::default().fg(SECONDARY_COLOR)),
+            Span::styled("      |", Style::default().fg(colors.primary)),
+            Span::styled(":_/", Style::default().fg(colors.secondary)),
             Span::styled(
                 " |                              ",
-                Style::default().fg(PRIMARY_COLOR),
+                Style::default().fg(colors.primary),
             ),
         ]));
         text.lines.push(Line::from(Span::styled(
             "     //   \\ \\                             ",
-            Style::default().fg(PRIMARY_COLOR),
+            Style::default().fg(colors.primary),
         )));
         text.lines.push(Line::from(Span::styled(
             "    (|     | )                            ",
-            Style::default().fg(PRIMARY_COLOR),
+            Style::default().fg(colors.primary),
         )));
         text.lines.push(Line::from(Span::styled(
             "   /'\\_   _/`\\                           ",
-            Style::default().fg(PRIMARY_COLOR),
+            Style::default().fg(colors.primary),
         )));
         text.lines.push(Line::from(Span::styled(
             "   \\___)=(___/                           ",
-            Style::default().fg(PRIMARY_COLOR),
+            Style::default().fg(colors.primary),
         )));
         text.lines.push(Line::from(Span::styled(
             "                                           ",
-            Style::default().fg(MUTED_COLOR),
+            Style::default().fg(colors.muted),
         )));
 
         // Help message
         text.lines.push(Line::from(Span::styled(
             "  No feeds added yet!                      ",
-            Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(colors.text)
+                .add_modifier(Modifier::BOLD),
         )));
         text.lines.push(Line::from(Span::styled(
             "                                           ",
-            Style::default().fg(MUTED_COLOR),
+            Style::default().fg(colors.muted),
         )));
         text.lines.push(Line::from(Span::styled(
             "  Press 'a' to add a feed                  ",
-            Style::default().fg(HIGHLIGHT_COLOR),
+            Style::default().fg(colors.highlight),
         )));
 
         let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
@@ -529,8 +612,9 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_type(NORMAL_BORDER)
-                .border_style(Style::default().fg(PRIMARY_COLOR))
-                .padding(Padding::new(1, 1, 1, 1)),
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 2, 2, 2)),
         );
 
         f.render_widget(paragraph, chunks[1]);
@@ -543,8 +627,6 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, feed)| {
-            let mut content = vec![];
-
             // Add category indicator if the feed is in a category
             let category = app.get_category_for_feed(&feed.url);
             let category_tag = if let Some(cat_idx) = category {
@@ -557,28 +639,28 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 String::new()
             };
 
-            // Feed title with category tag
+            // Feed title with category tag and domain
             let feed_title = format!("{}{}", feed.title, category_tag);
-
-            if Some(i) == app.selected_feed {
-                content.push(Span::styled(
-                    format!("▶ {}", feed_title),
-                    Style::default()
-                        .fg(HIGHLIGHT_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            } else {
-                content.push(Span::styled(
-                    format!("  {}", feed_title),
-                    Style::default().fg(TEXT_COLOR),
-                ));
-            }
-
             let domain = extract_domain(&feed.url);
-            content.push(Span::styled(
-                format!(" ({})", domain),
-                Style::default().fg(MUTED_COLOR),
-            ));
+            let domain_text = format!(" · {}", domain);
+
+            // Build the spans
+            let title_style = Style::default()
+                .fg(if Some(i) == app.selected_feed {
+                    colors.text
+                } else {
+                    colors.text_secondary
+                })
+                .add_modifier(if Some(i) == app.selected_feed {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                });
+
+            let content = vec![
+                Span::styled(feed_title, title_style),
+                Span::styled(domain_text, Style::default().fg(colors.muted)),
+            ];
 
             ListItem::new(Line::from(content))
         })
@@ -591,15 +673,17 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 .border_type(NORMAL_BORDER)
                 .title(" 📋 Feeds ")
                 .title_alignment(Alignment::Center)
-                .border_style(Style::default().fg(PRIMARY_COLOR)),
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 1, 1, 1)),
         )
         .highlight_style(
             Style::default()
-                .bg(PRIMARY_COLOR)
-                .fg(TEXT_COLOR)
+                .bg(colors.selected_bg)
+                .fg(colors.highlight)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(" ► ");
+        .highlight_symbol("▸ ");
 
     // Create a mutable ListState to track selection
     let mut list_state = ListState::default();
@@ -622,7 +706,7 @@ pub fn extract_domain(url: &str) -> String {
     }
 }
 
-fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     if let Some(feed) = app.current_feed() {
         let title = format!(" 📰 {} ", feed.title);
 
@@ -633,22 +717,24 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             text.lines.push(Line::from(""));
             text.lines.push(Line::from(Span::styled(
                 "       📭       ",
-                Style::default().fg(SECONDARY_COLOR),
+                Style::default().fg(colors.secondary),
             )));
             text.lines.push(Line::from(""));
             text.lines.push(Line::from(Span::styled(
                 "No items in this feed",
-                Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(colors.text)
+                    .add_modifier(Modifier::BOLD),
             )));
             text.lines.push(Line::from(""));
             text.lines.push(Line::from(Span::styled(
                 "This feed might be empty or need refreshing",
-                Style::default().fg(MUTED_COLOR),
+                Style::default().fg(colors.muted),
             )));
             text.lines.push(Line::from(""));
             text.lines.push(Line::from(Span::styled(
                 "Press 'r' to refresh feeds",
-                Style::default().fg(HIGHLIGHT_COLOR),
+                Style::default().fg(colors.highlight),
             )));
 
             let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
@@ -657,15 +743,16 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
                     .border_type(NORMAL_BORDER)
-                    .border_style(Style::default().fg(PRIMARY_COLOR))
-                    .padding(Padding::new(1, 1, 1, 1)),
+                    .border_style(Style::default().fg(colors.border))
+                    .style(Style::default().bg(colors.surface))
+                    .padding(Padding::new(2, 2, 2, 2)),
             );
 
             f.render_widget(paragraph, area);
             return;
         }
 
-        // Enhanced feed items for better readability
+        // Enhanced feed items with modern, clean layout
         let items: Vec<ListItem> = feed
             .items
             .iter()
@@ -678,15 +765,6 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .selected_feed
                     .is_some_and(|feed_idx| app.is_item_read(feed_idx, idx));
 
-                // More distinct selection indicators
-                let (title_color, bullet_icon, bullet_color) = if is_selected {
-                    (HIGHLIGHT_COLOR, "►", PRIMARY_COLOR)
-                } else if is_read {
-                    (MUTED_COLOR, "•", MUTED_COLOR) // Muted for read items
-                } else {
-                    (SECONDARY_COLOR, "•", MUTED_COLOR)
-                };
-
                 // Better formatted snippet with HTML cleanup
                 let snippet = if let Some(desc) = &item.description {
                     let plain_text = html2text::from_read(desc.as_bytes(), 50);
@@ -696,77 +774,83 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                         .replace("  ", " ")
                         .trim()
                         .to_string();
-                    truncate_str(&clean_text, 80)
+                    truncate_str(&clean_text, 100)
                 } else {
                     "".to_string()
                 };
 
-                // Create visually separated blocks for each item
+                // Create compact but readable item layout
                 let mut lines = vec![
-                    // Title with more distinct selection indicator
+                    // Title with read indicator
                     Line::from(vec![
                         Span::styled(
-                            format!("{} ", bullet_icon),
-                            Style::default().fg(bullet_color),
+                            if is_selected { "▸ " } else { "  " },
+                            Style::default().fg(colors.highlight),
                         ),
                         Span::styled(
                             &item.title,
                             Style::default()
-                                .fg(title_color)
+                                .fg(if is_selected {
+                                    colors.text
+                                } else if is_read {
+                                    colors.text_secondary
+                                } else {
+                                    colors.text
+                                })
                                 .add_modifier(if is_selected {
                                     Modifier::BOLD
                                 } else {
                                     Modifier::empty()
                                 }),
                         ),
+                        Span::styled(
+                            if is_read { " ✓" } else { "" },
+                            Style::default().fg(colors.success),
+                        ),
                     ]),
                 ];
 
-                // Add content preview with better formatting
+                // Add content preview with subtle styling
                 if !snippet.is_empty() {
                     lines.push(Line::from(vec![
-                        Span::styled("  │ ", Style::default().fg(BORDER_COLOR)),
+                        Span::styled("  ", Style::default()),
                         Span::styled(
                             snippet,
-                            Style::default().fg(if is_selected { TEXT_COLOR } else { MUTED_COLOR }),
+                            Style::default().fg(if is_selected {
+                                colors.text_secondary
+                            } else {
+                                colors.muted
+                            }),
                         ),
                     ]));
                 }
 
-                // Add better formatted metadata with icons
-                if !author.is_empty() && !date_str.is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                        Span::styled("👤 ", Style::default().fg(PRIMARY_COLOR)),
-                        Span::styled(author, Style::default().fg(TEXT_COLOR)),
-                        Span::styled(" • ", Style::default().fg(BORDER_COLOR)),
-                        Span::styled("🕒 ", Style::default().fg(PRIMARY_COLOR)),
-                        Span::styled(date_str, Style::default().fg(TEXT_COLOR)),
-                    ]));
-                } else if !author.is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                        Span::styled("👤 ", Style::default().fg(PRIMARY_COLOR)),
-                        Span::styled(author, Style::default().fg(TEXT_COLOR)),
-                    ]));
-                } else if !date_str.is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled("  └─ ", Style::default().fg(BORDER_COLOR)),
-                        Span::styled("🕒 ", Style::default().fg(PRIMARY_COLOR)),
-                        Span::styled(date_str, Style::default().fg(TEXT_COLOR)),
-                    ]));
+                // Add metadata on one line
+                let mut metadata_parts = Vec::new();
+                metadata_parts.push(Span::styled("  ", Style::default()));
+
+                if !author.is_empty() {
+                    metadata_parts.push(Span::styled(author, Style::default().fg(colors.muted)));
+                    if !date_str.is_empty() {
+                        metadata_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
+                    }
                 }
 
-                // Add a subtle separator line between items for better visual grouping
-                lines.push(Line::from(Span::styled(
-                    "  ",
-                    Style::default().fg(MUTED_COLOR),
-                )));
+                if !date_str.is_empty() {
+                    metadata_parts.push(Span::styled(date_str, Style::default().fg(colors.muted)));
+                }
 
-                ListItem::new(lines).style(Style::default().fg(TEXT_COLOR).bg(if is_selected {
-                    Color::Rgb(59, 66, 82)
+                if !metadata_parts.is_empty() {
+                    lines.push(Line::from(metadata_parts));
+                }
+
+                // Add spacing between items
+                lines.push(Line::from(""));
+
+                ListItem::new(lines).style(Style::default().fg(colors.text).bg(if is_selected {
+                    colors.selected_bg
                 } else {
-                    BACKGROUND_COLOR
+                    colors.background
                 }))
             })
             .collect();
@@ -778,16 +862,17 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
                     .border_type(NORMAL_BORDER)
-                    .border_style(Style::default().fg(PRIMARY_COLOR))
-                    .padding(Padding::new(1, 0, 0, 0)),
+                    .border_style(Style::default().fg(colors.border))
+                    .style(Style::default().bg(colors.surface))
+                    .padding(Padding::new(2, 1, 1, 1)),
             )
             .highlight_style(
                 Style::default()
-                    .bg(Color::Rgb(59, 66, 82))
-                    .fg(HIGHLIGHT_COLOR)
+                    .bg(colors.selected_bg)
+                    .fg(colors.highlight)
                     .add_modifier(Modifier::BOLD),
             )
-            .highlight_symbol(""); // We're handling the symbol manually now
+            .highlight_symbol("");
 
         let mut state = ratatui::widgets::ListState::default();
         state.select(app.selected_item);
@@ -796,147 +881,116 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     }
 }
 
-fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect) {
+fn render_item_detail<B: Backend>(
+    f: &mut Frame<B>,
+    app: &mut App,
+    area: Rect,
+    colors: &ColorScheme,
+) {
     if let Some(item) = app.current_item() {
-        // Split the area into header and content
+        // Split the area into header and content with better proportions
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(6), // Header (increased for richer metadata)
+                Constraint::Length(9), // Header - increased for better spacing
                 Constraint::Min(0),    // Content
             ])
             .split(area);
 
-        // Create header with rich styling and icons
+        // Create header with enhanced typography
         let mut header_lines = vec![
-            // Title with icon
-            Line::from(vec![
-                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
-                Span::styled(
-                    &item.title,
-                    Style::default()
-                        .fg(HIGHLIGHT_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            // Separator line
-            Line::from(vec![
-                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
-                Span::styled(
-                    "─".repeat(
-                        (chunks[0].width as usize)
-                            .saturating_sub(4)
-                            .min(item.title.width()),
-                    ),
-                    Style::default().fg(BORDER_COLOR),
-                ),
-            ]),
+            // Title with better emphasis
+            Line::from(vec![Span::styled(
+                &item.title,
+                Style::default()
+                    .fg(colors.text)
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            // Add spacing after title
+            Line::from(""),
         ];
+
+        // Build metadata line with enhanced formatting
+        let mut metadata_parts = Vec::new();
 
         // Add read status with icon
         if let (Some(feed_idx), Some(item_idx)) = (app.selected_feed, app.selected_item) {
             let is_read = app.is_item_read(feed_idx, item_idx);
-            header_lines.push(Line::from(vec![
-                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
-                Span::styled(
-                    if is_read { "✓ " } else { "✗ " },
-                    Style::default().fg(if is_read {
-                        HIGHLIGHT_COLOR
-                    } else {
-                        MUTED_COLOR
-                    }),
-                ),
-                Span::styled("Status: ", Style::default().fg(SECONDARY_COLOR)),
-                Span::styled(
-                    if is_read { "Read" } else { "Unread" },
-                    Style::default().fg(if is_read {
-                        HIGHLIGHT_COLOR
-                    } else {
-                        MUTED_COLOR
-                    }),
-                ),
-            ]));
-        }
-        // Add publication date with icon
-        if let Some(date) = &item.formatted_date {
-            header_lines.push(Line::from(vec![
-                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
-                Span::styled(
-                    "🕒 ",
-                    Style::default()
-                        .fg(PRIMARY_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("Published: ", Style::default().fg(SECONDARY_COLOR)),
-                Span::styled(date, Style::default().fg(TEXT_COLOR)),
-            ]));
+            metadata_parts.push(Span::styled(
+                if is_read { "✓ Read" } else { "○ Unread" },
+                Style::default().fg(if is_read {
+                    colors.success
+                } else {
+                    colors.highlight
+                }),
+            ));
         }
 
-        // Add author with icon
+        // Add author with emphasis
         if let Some(author) = &item.author {
-            header_lines.push(Line::from(vec![
-                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
-                Span::styled(
-                    "👤 ",
-                    Style::default()
-                        .fg(PRIMARY_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("Author: ", Style::default().fg(SECONDARY_COLOR)),
-                Span::styled(author, Style::default().fg(TEXT_COLOR)),
-            ]));
+            if !metadata_parts.is_empty() {
+                metadata_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
+            }
+            metadata_parts.push(Span::styled(
+                author,
+                Style::default()
+                    .fg(colors.secondary)
+                    .add_modifier(Modifier::ITALIC),
+            ));
         }
 
-        // Add link with visual cue
+        // Add date
+        if let Some(date) = &item.formatted_date {
+            if !metadata_parts.is_empty() {
+                metadata_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
+            }
+            metadata_parts.push(Span::styled(
+                date,
+                Style::default().fg(colors.text_secondary),
+            ));
+        }
+
+        if !metadata_parts.is_empty() {
+            header_lines.push(Line::from(metadata_parts));
+        }
+
+        // Add subtle separator before link
+        header_lines.push(Line::from(""));
+
+        // Add link if available with better styling
         if let Some(link) = &item.link {
             header_lines.push(Line::from(vec![
-                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
+                Span::styled("🔗 ", Style::default().fg(colors.muted)),
                 Span::styled(
-                    "🔗 ",
+                    truncate_url(link, 70),
                     Style::default()
-                        .fg(PRIMARY_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("Link: ", Style::default().fg(SECONDARY_COLOR)),
-                Span::styled(
-                    truncate_url(link, 40),
-                    Style::default()
-                        .fg(ACCENT_COLOR)
+                        .fg(colors.primary)
                         .add_modifier(Modifier::UNDERLINED),
                 ),
-            ]));
-
-            // Add guidance for opening in browser
-            header_lines.push(Line::from(vec![
-                Span::styled("  ", Style::default().fg(MUTED_COLOR)),
-                Span::styled("  └─ Press ", Style::default().fg(BORDER_COLOR)),
-                Span::styled(
-                    "'o'",
-                    Style::default()
-                        .fg(HIGHLIGHT_COLOR)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" to open in browser", Style::default().fg(BORDER_COLOR)),
             ]));
         }
 
         let header = Paragraph::new(header_lines)
             .block(
                 Block::default()
-                    .title(" 📄 Article Details ")
+                    .title(" 📄 Article ")
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
                     .border_type(NORMAL_BORDER)
-                    .border_style(Style::default().fg(PRIMARY_COLOR))
-                    .padding(Padding::new(1, 1, 0, 0)),
+                    .border_style(Style::default().fg(colors.border))
+                    .style(Style::default().bg(colors.surface))
+                    .padding(Padding::new(3, 3, 1, 1)), // Increased horizontal padding
             )
-            .style(Style::default().fg(TEXT_COLOR));
+            .style(Style::default().fg(colors.text))
+            .alignment(Alignment::Left);
 
         f.render_widget(header, chunks[0]);
 
-        // Render content with HTML converted to plain text and formatted
+        // Process content with enhanced formatting
         let description = if let Some(desc) = &item.description {
-            from_read(desc.as_bytes(), 80)
+            // Convert HTML to plain text with better width for readability
+            let raw_text = from_read(desc.as_bytes(), 100);
+            format_content_for_reading(&raw_text)
         } else {
             "No description available".to_string()
         };
@@ -945,13 +999,13 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect) {
         let viewport_height = chunks[1]
             .height
             .saturating_sub(2) // borders (top and bottom)
-            .saturating_sub(2); // padding (top and bottom)
+            .saturating_sub(4); // increased padding (top and bottom)
 
         // Calculate the content width (accounting for borders and padding)
         let content_width = chunks[1]
             .width
             .saturating_sub(2) // borders (left and right)
-            .saturating_sub(2) // padding (left and right)
+            .saturating_sub(8) // increased padding for better reading width
             as usize;
 
         // Calculate the number of lines the wrapped content will take
@@ -961,66 +1015,83 @@ fn render_item_detail<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect) {
         app.update_detail_max_scroll(content_lines, viewport_height);
         app.clamp_detail_scroll();
 
-        // Create content paragraph with enhanced formatting
+        // Create enhanced scroll indicator
+        let scroll_indicator = if app.detail_max_scroll > 0 {
+            let scroll_pct =
+                (app.detail_vertical_scroll as f32 / app.detail_max_scroll as f32 * 100.0) as u16;
+            if app.detail_vertical_scroll == 0 {
+                " 📝 Article Content · Scroll ↓ for more ".to_string()
+            } else if app.detail_vertical_scroll >= app.detail_max_scroll {
+                " 📝 Article Content · End of article ".to_string()
+            } else {
+                format!(" 📝 Article Content · {}% ", scroll_pct)
+            }
+        } else {
+            " 📝 Article Content ".to_string()
+        };
+
+        // Create content paragraph with enhanced reading experience
         let content = Paragraph::new(description)
             .block(
                 Block::default()
-                    .title(" 📝 Content ")
+                    .title(scroll_indicator)
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
                     .border_type(NORMAL_BORDER)
-                    .border_style(Style::default().fg(PRIMARY_COLOR))
-                    .padding(Padding::new(1, 1, 1, 1)),
+                    .border_style(Style::default().fg(colors.border))
+                    .style(Style::default().bg(colors.surface))
+                    .padding(Padding::new(4, 4, 2, 2)), // Generous padding for reading comfort
             )
-            .style(Style::default().fg(TEXT_COLOR))
+            .style(Style::default().fg(colors.text))
             .scroll((app.detail_vertical_scroll, 0))
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: true })
+            .alignment(Alignment::Left);
 
         f.render_widget(content, chunks[1]);
     }
 }
 
-fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     // Match on the input mode and view to determine the help text and style
     let (help_text, _style) = match app.input_mode {
         InputMode::Normal => {
             let help_text = match app.view {
                 View::Dashboard => {
                     if app.feeds.is_empty() {
-                        "a: Add feed | q: Quit | CTRL+C: Manage categories"
+                        "a: Add feed | t: Theme | q: Quit | CTRL+C: Manage categories"
                     } else {
-                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | a: Add feed | r: Refresh | f: Filter | /: Search | q: Quit"
+                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | a: Add feed | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
                     }
                 }
                 View::FeedList => {
                     if app.feeds.is_empty() {
-                        "a: Add feed | q: Quit | TAB: Dashboard | CTRL+C: Categories"
+                        "a: Add feed | t: Theme | q: Quit | TAB: Dashboard | CTRL+C: Categories"
                     } else {
-                        "a: Add feed | c: Assign to category | DEL: Remove feed | ENTER: Open | q: Quit | CTRL+C: Categories"
+                        "a: Add feed | c: Assign to category | DEL: Remove feed | ENTER: Open | t: Theme | q: Quit | CTRL+C: Categories"
                     }
                 }
                 View::CategoryManagement => {
-                    "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | ESC/q: Back"
+                    "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | t: Theme | ESC/q: Back"
                 }
                 View::FeedItems => {
-                    "h/esc: back | home: dashboard | enter: view | Space: Toggle read | o: open | /: search | q: quit"
+                    "h/esc: back | home: dashboard | enter: view | Space: Toggle read | o: open | /: search | t: theme | q: quit"
                 }
                 View::FeedItemDetail => {
-                    "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast | Space: Toggle read | o: open | q: quit"
+                    "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast | Space: Toggle read | o: open | t: theme | q: quit"
                 }
             };
-            (help_text, Style::default().fg(TEXT_COLOR))
+            (help_text, Style::default().fg(colors.text))
         }
         InputMode::InsertUrl => (
             "Enter feed URL (e.g., https://news.ycombinator.com/rss)",
-            Style::default().fg(HIGHLIGHT_COLOR),
+            Style::default().fg(colors.highlight),
         ),
         InputMode::SearchMode => (
             "Enter search term (press ENTER to search)",
-            Style::default().fg(HIGHLIGHT_COLOR),
+            Style::default().fg(colors.highlight),
         ),
-        InputMode::FilterMode => ("", Style::default().fg(MUTED_COLOR)),
-        InputMode::CategoryNameInput => ("", Style::default().fg(MUTED_COLOR)),
+        InputMode::FilterMode => ("", Style::default().fg(colors.muted)),
+        InputMode::CategoryNameInput => ("", Style::default().fg(colors.muted)),
     };
 
     // Only show help bar in normal mode
@@ -1040,19 +1111,19 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 spans.push(Span::styled(
                     key,
                     Style::default()
-                        .fg(HIGHLIGHT_COLOR)
+                        .fg(colors.highlight)
                         .add_modifier(Modifier::BOLD),
                 ));
 
                 // Add the description in normal text color
-                spans.push(Span::styled(desc, Style::default().fg(TEXT_COLOR)));
+                spans.push(Span::styled(desc, Style::default().fg(colors.text)));
             } else {
-                spans.push(Span::styled(trimmed, Style::default().fg(TEXT_COLOR)));
+                spans.push(Span::styled(trimmed, Style::default().fg(colors.text)));
             }
 
             // Add separator unless this is the last item
             if idx < parts.len() - 1 {
-                spans.push(Span::styled(" | ", Style::default().fg(BORDER_COLOR)));
+                spans.push(Span::styled(" | ", Style::default().fg(colors.border)));
             }
         }
 
@@ -1062,34 +1133,37 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(NORMAL_BORDER)
-                    .border_style(Style::default().fg(PRIMARY_COLOR))
+                    .border_style(Style::default().fg(colors.border))
+                    .style(Style::default().bg(colors.surface))
                     .title(" 💡 Commands ")
-                    .title_alignment(Alignment::Center),
+                    .title_alignment(Alignment::Center)
+                    .padding(Padding::new(1, 1, 0, 0)),
             );
         f.render_widget(help, area);
     }
 }
 
-fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str) {
-    let area = centered_rect(60, 25, f.size());
+fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str, colors: &ColorScheme) {
+    let area = centered_rect(60, 30, f.size());
 
     // Clear the background
     f.render_widget(Clear, area);
 
-    // Create a visually appealing error box
+    // Create a modern error modal
     let error_lines = vec![
+        Line::from(""),
         Line::from(Span::styled(
-            "  ⚠️  ERROR  ⚠️  ",
+            "⚠ Error",
             Style::default()
-                .fg(ERROR_COLOR)
+                .fg(colors.error)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(Span::styled(error, Style::default().fg(TEXT_COLOR))),
+        Line::from(Span::styled(error, Style::default().fg(colors.text))),
         Line::from(""),
         Line::from(Span::styled(
             "Press any key to dismiss",
-            Style::default().fg(MUTED_COLOR),
+            Style::default().fg(colors.text_secondary),
         )),
     ];
 
@@ -1097,9 +1171,10 @@ fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(ACTIVE_BORDER)
-                .border_style(Style::default().fg(ERROR_COLOR))
-                .padding(Padding::new(2, 2, 1, 1)),
+                .border_type(FOCUS_BORDER)
+                .border_style(Style::default().fg(colors.error))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(3, 3, 2, 2)),
         )
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
@@ -1107,75 +1182,73 @@ fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str) {
     f.render_widget(error_text, area);
 }
 
-fn render_success_notification<B: Backend>(f: &mut Frame<B>, message: &str) {
-    // Create a smaller notification in the top-right corner
+fn render_success_notification<B: Backend>(f: &mut Frame<B>, message: &str, colors: &ColorScheme) {
+    // Create a modern notification in the top-right corner
+    let msg_width = (message.len() + 6).min(50) as u16;
     let area = Rect {
-        x: f.size().width.saturating_sub(42),
+        x: f.size().width.saturating_sub(msg_width + 2),
         y: 2,
-        width: 40.min(f.size().width),
+        width: msg_width.min(f.size().width),
         height: 3,
     };
 
     // Clear the background
     f.render_widget(Clear, area);
 
-    // Create an attractive success notification
+    // Create a clean success notification
     let success_text = Paragraph::new(Line::from(vec![Span::styled(
-        format!("  {}  ", message),
+        format!(" {} ", message),
         Style::default()
-            .fg(HIGHLIGHT_COLOR)
+            .fg(colors.success)
             .add_modifier(Modifier::BOLD),
     )]))
     .block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(HIGHLIGHT_COLOR))
-            .style(Style::default().bg(Color::Rgb(20, 40, 30))), // Dark green background
+            .border_style(Style::default().fg(colors.success))
+            .style(Style::default().bg(colors.surface)),
     )
     .alignment(Alignment::Center);
 
     f.render_widget(success_text, area);
 }
 
-fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let area = centered_rect(70, 20, f.size());
+fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
+    let area = centered_rect(70, 25, f.size());
 
-    // Clear the background with semi-transparent effect
+    // Clear the background
     f.render_widget(Clear, area);
 
     // Create modal title and help text based on mode
     let (title, help_text, icon) = if matches!(app.input_mode, InputMode::InsertUrl) {
         (
-            " Add Feed URL ",
+            "Add Feed URL",
             "Enter the RSS feed URL and press Enter",
             "🔗",
         )
     } else {
-        (" Search ", "Enter search terms and press Enter", "🔍")
+        ("Search", "Enter search terms and press Enter", "🔍")
     };
 
-    // Create an attractive input box
+    // Create a modern input modal
     let mut lines = Vec::new();
 
-    // Add icon and title
-    lines.push(Line::from(vec![
-        Span::styled(
-            format!("  {}  ", icon),
-            Style::default().fg(SECONDARY_COLOR),
-        ),
-        Span::styled(
-            title,
-            Style::default()
-                .fg(HIGHLIGHT_COLOR)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]));
+    // Add title with icon
+    lines.push(Line::from(vec![Span::styled(
+        format!("{} {}", icon, title),
+        Style::default()
+            .fg(colors.text)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    // Add separator
+    lines.push(Line::from(""));
 
     // Add help text
     lines.push(Line::from(vec![Span::styled(
-        format!("  {}  ", help_text),
-        Style::default().fg(MUTED_COLOR),
+        help_text,
+        Style::default().fg(colors.text_secondary),
     )]));
 
     // Add spacer
@@ -1183,35 +1256,47 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     // Add input field with cursor
     let input_display = format!("{}█", app.input);
-    lines.push(Line::from(vec![
-        Span::styled("  > ", Style::default().fg(PRIMARY_COLOR)),
-        Span::styled(
-            input_display,
-            Style::default()
-                .fg(ACCENT_COLOR)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        input_display,
+        Style::default()
+            .fg(colors.highlight)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    // Add spacer
+    lines.push(Line::from(""));
 
     // Add controls help
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![Span::styled(
-        "  Press Enter to submit or Esc to cancel  ",
-        Style::default().fg(TEXT_COLOR),
-    )]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "Enter",
+            Style::default()
+                .fg(colors.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" to submit · ", Style::default().fg(colors.text_secondary)),
+        Span::styled(
+            "Esc",
+            Style::default()
+                .fg(colors.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" to cancel", Style::default().fg(colors.text_secondary)),
+    ]));
 
     let input_paragraph = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(ACTIVE_BORDER)
-            .border_style(Style::default().fg(PRIMARY_COLOR))
-            .padding(Padding::new(2, 2, 1, 1)),
+            .border_type(FOCUS_BORDER)
+            .border_style(Style::default().fg(colors.border_focus))
+            .style(Style::default().bg(colors.surface))
+            .padding(Padding::new(3, 3, 2, 2)),
     );
 
     f.render_widget(input_paragraph, area);
 }
 
-fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
     let area = centered_rect(70, 60, f.size());
 
     // Clear the area
@@ -1221,11 +1306,11 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     let mut text = vec![
         // Header
         Line::from(vec![
-            Span::styled("  🔍  ", Style::default().fg(PRIMARY_COLOR)),
+            Span::styled("  🔍  ", Style::default().fg(colors.primary)),
             Span::styled(
                 "Feed Filters",
                 Style::default()
-                    .fg(HIGHLIGHT_COLOR)
+                    .fg(colors.highlight)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
@@ -1242,13 +1327,13 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     };
 
     text.push(Line::from(vec![
-        Span::styled("  c - Category: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled("  c - Category: ", Style::default().fg(colors.text)),
         Span::styled(
             category_status,
             Style::default().fg(if app.filter_options.category.is_some() {
-                HIGHLIGHT_COLOR
+                colors.highlight
             } else {
-                MUTED_COLOR
+                colors.muted
             }),
         ),
         Span::styled(
@@ -1257,7 +1342,7 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
             } else {
                 "".to_string()
             },
-            Style::default().fg(MUTED_COLOR),
+            Style::default().fg(colors.muted),
         ),
     ]));
 
@@ -1276,13 +1361,13 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     };
 
     text.push(Line::from(vec![
-        Span::styled("  t - Time/Age: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled("  t - Time/Age: ", Style::default().fg(colors.text)),
         Span::styled(
             age_status,
             Style::default().fg(if app.filter_options.age.is_some() {
-                HIGHLIGHT_COLOR
+                colors.highlight
             } else {
-                MUTED_COLOR
+                colors.muted
             }),
         ),
     ]));
@@ -1295,13 +1380,13 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     };
 
     text.push(Line::from(vec![
-        Span::styled("  a - Author: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled("  a - Author: ", Style::default().fg(colors.text)),
         Span::styled(
             author_status,
             Style::default().fg(if app.filter_options.has_author.is_some() {
-                HIGHLIGHT_COLOR
+                colors.highlight
             } else {
-                MUTED_COLOR
+                colors.muted
             }),
         ),
     ]));
@@ -1314,13 +1399,13 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     };
 
     text.push(Line::from(vec![
-        Span::styled("  r - Read status: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled("  r - Read status: ", Style::default().fg(colors.text)),
         Span::styled(
             read_status,
             Style::default().fg(if app.filter_options.read_status.is_some() {
-                HIGHLIGHT_COLOR
+                colors.highlight
             } else {
-                MUTED_COLOR
+                colors.muted
             }),
         ),
     ]));
@@ -1335,13 +1420,13 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     };
 
     text.push(Line::from(vec![
-        Span::styled("  l - Length: ", Style::default().fg(TEXT_COLOR)),
+        Span::styled("  l - Length: ", Style::default().fg(colors.text)),
         Span::styled(
             length_status,
             Style::default().fg(if app.filter_options.min_length.is_some() {
-                HIGHLIGHT_COLOR
+                colors.highlight
             } else {
-                MUTED_COLOR
+                colors.muted
             }),
         ),
     ]));
@@ -1349,8 +1434,8 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     // Clear filters option
     text.push(Line::from(""));
     text.push(Line::from(vec![
-        Span::styled("  x - ", Style::default().fg(TEXT_COLOR)),
-        Span::styled("Clear all filters", Style::default().fg(ERROR_COLOR)),
+        Span::styled("  x - ", Style::default().fg(colors.text)),
+        Span::styled("Clear all filters", Style::default().fg(colors.error)),
     ]));
 
     text.push(Line::from(""));
@@ -1364,7 +1449,7 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
             "  Active Filters: {}/5  |  Showing: {}/{} items",
             active_count, filtered_count, total_count
         ),
-        Style::default().fg(MUTED_COLOR),
+        Style::default().fg(colors.muted),
     )]));
 
     // Add the filter summary
@@ -1372,24 +1457,25 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
         text.push(Line::from(""));
         text.push(Line::from(vec![Span::styled(
             format!("  Current filters: {}", app.get_filter_summary()),
-            Style::default().fg(SECONDARY_COLOR),
+            Style::default().fg(colors.secondary),
         )]));
     }
 
     text.push(Line::from(""));
     text.push(Line::from(vec![Span::styled(
         "  Press Esc to close this dialog",
-        Style::default().fg(TEXT_COLOR),
+        Style::default().fg(colors.text),
     )]));
 
     let filter_paragraph = Paragraph::new(text).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(ACTIVE_BORDER)
-            .border_style(Style::default().fg(PRIMARY_COLOR))
-            .title(" Filter Options ")
+            .border_type(FOCUS_BORDER)
+            .border_style(Style::default().fg(colors.border_focus))
+            .style(Style::default().bg(colors.surface))
+            .title(" 🔍 Filter Options ")
             .title_alignment(Alignment::Center)
-            .padding(Padding::new(2, 2, 1, 1)),
+            .padding(Padding::new(3, 3, 2, 2)),
     );
 
     f.render_widget(filter_paragraph, area);
@@ -1469,6 +1555,79 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
     }
 }
 
+// Helper function to format content for better reading experience
+fn format_content_for_reading(text: &str) -> String {
+    let mut formatted_lines = Vec::new();
+    let mut current_paragraph = Vec::new();
+    let mut in_list = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        // Detect list items (lines starting with -, *, •, numbers, etc.)
+        let is_list_item = trimmed.starts_with('-')
+            || trimmed.starts_with('*')
+            || trimmed.starts_with('•')
+            || trimmed.starts_with("  - ")
+            || trimmed.starts_with("  * ")
+            || (trimmed.len() > 2
+                && trimmed.chars().next().unwrap_or(' ').is_ascii_digit()
+                && trimmed.chars().nth(1) == Some('.'));
+
+        if trimmed.is_empty() {
+            // Empty line - end current paragraph
+            if !current_paragraph.is_empty() {
+                formatted_lines.push(current_paragraph.join(" "));
+                current_paragraph.clear();
+                formatted_lines.push(String::new()); // Add spacing between paragraphs
+                in_list = false;
+            }
+        } else if is_list_item {
+            // List item - preserve as its own line
+            if !current_paragraph.is_empty() {
+                formatted_lines.push(current_paragraph.join(" "));
+                current_paragraph.clear();
+            }
+            formatted_lines.push(format!("  {}", trimmed));
+            in_list = true;
+        } else if in_list && trimmed.starts_with("  ") {
+            // Continuation of list item
+            formatted_lines.push(format!("    {}", trimmed.trim()));
+        } else {
+            // Regular text - accumulate into current paragraph
+            if in_list && !current_paragraph.is_empty() {
+                // Starting new paragraph after list
+                formatted_lines.push(String::new());
+                in_list = false;
+            }
+            current_paragraph.push(trimmed.to_string());
+        }
+    }
+
+    // Add any remaining paragraph
+    if !current_paragraph.is_empty() {
+        formatted_lines.push(current_paragraph.join(" "));
+    }
+
+    // Clean up excessive empty lines (max 2 in a row becomes 1)
+    let mut result = Vec::new();
+    let mut empty_count = 0;
+
+    for line in formatted_lines {
+        if line.is_empty() {
+            empty_count += 1;
+            if empty_count <= 1 {
+                result.push(line);
+            }
+        } else {
+            empty_count = 0;
+            result.push(line);
+        }
+    }
+
+    result.join("\n")
+}
+
 // Helper function to count the number of lines when text is wrapped
 fn count_wrapped_lines(text: &str, width: usize) -> u16 {
     if width == 0 {
@@ -1499,7 +1658,12 @@ fn count_wrapped_lines(text: &str, width: usize) -> u16 {
 }
 
 // Update the render_category_management function to show feeds when a category is expanded
-fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_category_management<B: Backend>(
+    f: &mut Frame<B>,
+    app: &App,
+    area: Rect,
+    colors: &ColorScheme,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1527,7 +1691,9 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
         .border_type(NORMAL_BORDER)
         .title(title)
         .title_alignment(Alignment::Center)
-        .border_style(Style::default().fg(PRIMARY_COLOR));
+        .border_style(Style::default().fg(colors.border))
+        .style(Style::default().bg(colors.surface))
+        .padding(Padding::new(1, 1, 0, 0));
 
     f.render_widget(title_block, chunks[0]);
 
@@ -1538,7 +1704,7 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
     if app.categories.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
             "No categories yet. Press 'n' to create a new category.",
-            Style::default().fg(MUTED_COLOR),
+            Style::default().fg(colors.muted),
         ))));
     } else {
         for (cat_idx, category) in app.categories.iter().enumerate() {
@@ -1553,10 +1719,10 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
 
             let style = if Some(cat_idx) == app.selected_category {
                 Style::default()
-                    .fg(HIGHLIGHT_COLOR)
+                    .fg(colors.highlight)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(TEXT_COLOR)
+                Style::default().fg(colors.text)
             };
 
             list_items.push(ListItem::new(Line::from(Span::styled(
@@ -1576,9 +1742,9 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
 
                 for (feed_idx, feed) in &feeds_in_category {
                     let feed_style = if Some(*feed_idx) == app.selected_feed {
-                        Style::default().fg(ACCENT_COLOR)
+                        Style::default().fg(colors.accent)
                     } else {
-                        Style::default().fg(MUTED_COLOR)
+                        Style::default().fg(colors.muted)
                     };
 
                     list_items.push(ListItem::new(Line::from(Span::styled(
@@ -1592,7 +1758,7 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
                 if feeds_in_category.is_empty() {
                     list_items.push(ListItem::new(Line::from(Span::styled(
                         "   (No feeds in this category)",
-                        Style::default().fg(MUTED_COLOR),
+                        Style::default().fg(colors.muted),
                     ))));
                     list_indices.push(None);
                 }
@@ -1606,12 +1772,14 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
                 .borders(Borders::ALL)
                 .border_type(NORMAL_BORDER)
                 .title(" Categories ")
-                .border_style(Style::default().fg(SECONDARY_COLOR)),
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 1, 1, 1)),
         )
         .highlight_style(
             Style::default()
-                .bg(PRIMARY_COLOR)
-                .fg(Color::Black)
+                .bg(colors.selected_bg)
+                .fg(colors.highlight)
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -1640,7 +1808,7 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
         .borders(Borders::ALL)
         .border_type(NORMAL_BORDER)
         .title(" Controls ")
-        .border_style(Style::default().fg(MUTED_COLOR));
+        .border_style(Style::default().fg(colors.muted));
 
     let help_para = Paragraph::new(help_text)
         .block(help_block)
@@ -1651,7 +1819,7 @@ fn render_category_management<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
 }
 
 // Add a new function to render the category name input modal
-fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
     let area = centered_rect(60, 20, f.size());
 
     // Clear the area behind the modal
@@ -1680,7 +1848,9 @@ fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
         .borders(Borders::ALL)
         .title(title)
         .title_alignment(Alignment::Center)
-        .border_style(Style::default().fg(PRIMARY_COLOR));
+        .border_style(Style::default().fg(colors.border))
+        .style(Style::default().bg(colors.surface))
+        .padding(Padding::new(1, 1, 0, 0));
 
     f.render_widget(title_block, chunks[0]);
 
@@ -1688,11 +1858,13 @@ fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     let input_block = Block::default()
         .borders(Borders::ALL)
         .title(" Name ")
-        .border_style(Style::default().fg(SECONDARY_COLOR));
+        .border_style(Style::default().fg(colors.border_focus))
+        .style(Style::default().bg(colors.surface))
+        .padding(Padding::new(1, 1, 0, 0));
 
     let input_text = Paragraph::new(app.input.as_str())
         .block(input_block)
-        .style(Style::default().fg(HIGHLIGHT_COLOR));
+        .style(Style::default().fg(colors.highlight));
 
     f.render_widget(input_text, chunks[1]);
 
@@ -1705,7 +1877,7 @@ fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
     let help_block = Block::default()
         .borders(Borders::ALL)
         .title(" Controls ")
-        .border_style(Style::default().fg(MUTED_COLOR));
+        .border_style(Style::default().fg(colors.muted));
 
     let help_text = "ENTER: Confirm | ESC: Cancel";
     let help_para = Paragraph::new(help_text)
