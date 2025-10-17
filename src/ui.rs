@@ -62,6 +62,11 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         render_error_modal(f, error);
     }
 
+    // Show success notification if present
+    if let Some(success) = &app.success_message {
+        render_success_notification(f, success);
+    }
+
     // Show input modal when in input modes
     if matches!(app.input_mode, InputMode::InsertUrl | InputMode::SearchMode) {
         render_input_modal(f, app);
@@ -984,7 +989,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     if app.feeds.is_empty() {
                         "a: Add feed | q: Quit | CTRL+C: Manage categories"
                     } else {
-                        "↑/↓: Navigate | ENTER: View feed | a: Add feed | r: Refresh | f: Filter | /: Search | q: Quit"
+                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | a: Add feed | r: Refresh | f: Filter | /: Search | q: Quit"
                     }
                 }
                 View::FeedList => {
@@ -998,10 +1003,10 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                     "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | ESC/q: Back"
                 }
                 View::FeedItems => {
-                    "h/esc: back to feeds | home: dashboard | enter: view detail | o: open link | /: search | q: quit"
+                    "h/esc: back | home: dashboard | enter: view | Space: Toggle read | o: open | /: search | q: quit"
                 }
                 View::FeedItemDetail => {
-                    "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast scroll | g: top | G/End: bottom | o: open | q: quit"
+                    "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast | Space: Toggle read | o: open | q: quit"
                 }
             };
             (help_text, Style::default().fg(TEXT_COLOR))
@@ -1100,6 +1105,37 @@ fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str) {
         .wrap(Wrap { trim: true });
 
     f.render_widget(error_text, area);
+}
+
+fn render_success_notification<B: Backend>(f: &mut Frame<B>, message: &str) {
+    // Create a smaller notification in the top-right corner
+    let area = Rect {
+        x: f.size().width.saturating_sub(42),
+        y: 2,
+        width: 40.min(f.size().width),
+        height: 3,
+    };
+
+    // Clear the background
+    f.render_widget(Clear, area);
+
+    // Create an attractive success notification
+    let success_text = Paragraph::new(Line::from(vec![Span::styled(
+        format!("  {}  ", message),
+        Style::default()
+            .fg(HIGHLIGHT_COLOR)
+            .add_modifier(Modifier::BOLD),
+    )]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(HIGHLIGHT_COLOR))
+            .style(Style::default().bg(Color::Rgb(20, 40, 30))), // Dark green background
+    )
+    .alignment(Alignment::Center);
+
+    f.render_widget(success_text, area);
 }
 
 fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App) {
