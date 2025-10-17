@@ -16,11 +16,7 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-const NORMAL_BORDER: BorderType = BorderType::Rounded;
-const ACTIVE_BORDER: BorderType = BorderType::Double;
-const FOCUS_BORDER: BorderType = BorderType::Thick;
-
-/// Color scheme for the UI - supports both light and dark themes
+/// Color scheme for the UI - supports both light and dark themes with distinct personalities
 #[derive(Clone, Debug)]
 pub struct ColorScheme {
     pub primary: Color,
@@ -37,46 +33,56 @@ pub struct ColorScheme {
     pub error: Color,
     pub border: Color,
     pub border_focus: Color,
+    // Theme-specific border styles
+    pub border_normal: BorderType,
+    pub border_active: BorderType,
+    pub border_focus_type: BorderType,
 }
 
 impl ColorScheme {
-    /// Dark theme - the original modern refined color palette
+    /// Dark theme - Cyberpunk/Neon aesthetic with high contrast and futuristic vibes
     pub fn dark() -> Self {
         Self {
-            primary: Color::Rgb(100, 181, 246),        // Soft blue
-            secondary: Color::Rgb(171, 130, 255),      // Soft purple
-            highlight: Color::Rgb(129, 212, 250),      // Bright cyan
-            success: Color::Rgb(102, 187, 106),        // Soft green
-            background: Color::Rgb(18, 18, 18),        // Deep charcoal
-            surface: Color::Rgb(28, 28, 30),           // Slightly lighter surface
-            selected_bg: Color::Rgb(42, 48, 62),       // Subtle blue-gray
-            text: Color::Rgb(230, 230, 230),           // Soft white
-            text_secondary: Color::Rgb(158, 158, 158), // Medium gray
-            muted: Color::Rgb(97, 97, 97),             // Muted gray
-            accent: Color::Rgb(255, 202, 40),          // Warm gold
-            error: Color::Rgb(239, 83, 80),            // Vibrant red
-            border: Color::Rgb(60, 60, 60),            // Subtle border
-            border_focus: Color::Rgb(100, 181, 246),   // Focused border
+            primary: Color::Rgb(0, 217, 255),          // Electric cyan
+            secondary: Color::Rgb(255, 0, 255),        // Vivid magenta
+            highlight: Color::Rgb(0, 255, 157),        // Neon green
+            success: Color::Rgb(57, 255, 20),          // Bright neon green
+            background: Color::Rgb(10, 10, 10),        // Deep black
+            surface: Color::Rgb(15, 20, 25),           // Very dark with blue tint
+            selected_bg: Color::Rgb(30, 30, 50),       // Dark blue-purple
+            text: Color::Rgb(255, 255, 255),           // Pure white
+            text_secondary: Color::Rgb(150, 200, 255), // Light cyan
+            muted: Color::Rgb(100, 100, 120),          // Muted blue-gray
+            accent: Color::Rgb(255, 215, 0),           // Electric gold
+            error: Color::Rgb(255, 20, 147),           // Hot pink
+            border: Color::Rgb(80, 80, 120),           // Blue-tinted border
+            border_focus: Color::Rgb(0, 217, 255),     // Electric cyan focus
+            border_normal: BorderType::Double,
+            border_active: BorderType::Double,
+            border_focus_type: BorderType::Thick,
         }
     }
 
-    /// Light theme - optimized for readability in bright environments
+    /// Light theme - Minimal/Zen aesthetic with soft natural colors and organic simplicity
     pub fn light() -> Self {
         Self {
-            primary: Color::Rgb(25, 118, 210),      // Deeper blue
-            secondary: Color::Rgb(123, 31, 162),    // Deep purple
-            highlight: Color::Rgb(2, 136, 209),     // Teal blue
-            success: Color::Rgb(56, 142, 60),       // Forest green
-            background: Color::Rgb(250, 250, 250),  // Off-white
-            surface: Color::Rgb(255, 255, 255),     // Pure white
-            selected_bg: Color::Rgb(224, 242, 254), // Light blue selection
-            text: Color::Rgb(33, 33, 33),           // Dark gray text
-            text_secondary: Color::Rgb(97, 97, 97), // Medium gray
-            muted: Color::Rgb(158, 158, 158),       // Light gray
-            accent: Color::Rgb(245, 124, 0),        // Orange accent
-            error: Color::Rgb(211, 47, 47),         // Deep red
-            border: Color::Rgb(189, 189, 189),      // Light border
-            border_focus: Color::Rgb(25, 118, 210), // Focused border
+            primary: Color::Rgb(92, 138, 126),         // Soft sage green
+            secondary: Color::Rgb(201, 112, 100),      // Warm terracotta
+            highlight: Color::Rgb(218, 165, 32),       // Gentle amber gold
+            success: Color::Rgb(106, 153, 85),         // Muted sage
+            background: Color::Rgb(250, 248, 245),     // Warm off-white
+            surface: Color::Rgb(255, 255, 252),        // Cream white
+            selected_bg: Color::Rgb(237, 231, 220),    // Soft beige selection
+            text: Color::Rgb(60, 50, 40),              // Warm dark brown
+            text_secondary: Color::Rgb(120, 110, 100), // Medium warm gray
+            muted: Color::Rgb(170, 165, 155),          // Muted stone gray
+            accent: Color::Rgb(184, 134, 100),         // Natural wood brown
+            error: Color::Rgb(180, 80, 70),            // Soft clay red
+            border: Color::Rgb(200, 195, 185),         // Subtle warm border
+            border_focus: Color::Rgb(92, 138, 126),    // Sage focus
+            border_normal: BorderType::Rounded,
+            border_active: BorderType::Rounded,
+            border_focus_type: BorderType::Rounded,
         }
     }
 
@@ -86,6 +92,154 @@ impl ColorScheme {
             Theme::Dark => Self::dark(),
             Theme::Light => Self::light(),
         }
+    }
+
+    /// Get theme-specific list bullet symbol
+    pub fn get_list_bullet(&self) -> &str {
+        if self.border_normal == BorderType::Double {
+            "◆" // Dark theme: tech diamond
+        } else {
+            "◦" // Light theme: minimal circle
+        }
+    }
+
+    /// Get theme-specific arrow right symbol
+    pub fn get_arrow_right(&self) -> &str {
+        if self.border_normal == BorderType::Double {
+            "▸" // Dark theme: futuristic arrow
+        } else {
+            "›" // Light theme: minimal arrow
+        }
+    }
+
+    /// Get theme-specific selection indicator
+    pub fn get_selection_indicator(&self) -> &str {
+        if self.border_normal == BorderType::Double {
+            "▶" // Dark theme: solid arrow
+        } else {
+            "•" // Light theme: simple bullet
+        }
+    }
+
+    /// Get theme-specific loading animation frames
+    pub fn get_loading_frames(&self) -> Vec<&str> {
+        if self.border_normal == BorderType::Double {
+            // Dark theme: Tech/cyber loading
+            vec!["◢", "◣", "◤", "◥", "◢", "◣", "◤", "◥", "◢", "◣"]
+        } else {
+            // Light theme: Minimal loading
+            vec!["⋯", "⋰", "⋱", "⋯", "⋰", "⋱", "⋯", "⋰", "⋱", "⋯"]
+        }
+    }
+
+    /// Get theme-specific empty feed ASCII art
+    pub fn get_empty_feed_art(&self) -> Vec<String> {
+        if self.border_normal == BorderType::Double {
+            // Dark theme: Cyberpunk terminal
+            vec![
+                "                                           ".to_string(),
+                "       ╔═══════════════════╗               ".to_string(),
+                "       ║  ◢◣  C Y B E R  ◤◥  ║               ".to_string(),
+                "       ║   ═══════════════  ║               ".to_string(),
+                "       ║   > NO_SIGNAL_    ║               ".to_string(),
+                "       ║   > INIT_FEED...  ║               ".to_string(),
+                "       ╚═══════════════════╝               ".to_string(),
+                "                                           ".to_string(),
+            ]
+        } else {
+            // Light theme: Zen garden with simple plant
+            vec![
+                "                                           ".to_string(),
+                "              _                            ".to_string(),
+                "             ( )                           ".to_string(),
+                "              |                            ".to_string(),
+                "             / \\                           ".to_string(),
+                "            /   \\                          ".to_string(),
+                "           -------                         ".to_string(),
+                "                                           ".to_string(),
+            ]
+        }
+    }
+
+    /// Get theme-specific dashboard welcome art
+    pub fn get_dashboard_art(&self) -> Vec<String> {
+        if self.border_normal == BorderType::Double {
+            // Dark theme: Cyberpunk glitch aesthetic
+            vec![
+                "                                                ".to_string(),
+                "  ███████╗███████╗███████╗██████╗ ██████╗      ".to_string(),
+                "  ██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗     ".to_string(),
+                "  █████╗  █████╗  █████╗  ██║  ██║██████╔╝     ".to_string(),
+                "  ██╔══╝  ██╔══╝  ██╔══╝  ██║  ██║██╔══██╗     ".to_string(),
+                "  ██║     ███████╗███████╗██████╔╝██║  ██║     ".to_string(),
+                "  ╚═╝     ╚══════╝╚══════╝╚═════╝ ╚═╝  ╚═╝     ".to_string(),
+                "  ═══════════════════════════════════════════  ".to_string(),
+                "  ◢◣ NEURAL FEED INTERFACE v2.0 ◤◥             ".to_string(),
+                "  ═══════════════════════════════════════════  ".to_string(),
+                "                                                ".to_string(),
+                "  ▸ INITIALIZE: Press 'a' to add feed URL       ".to_string(),
+                "  ▸ CONNECT TO DATA STREAMS                     ".to_string(),
+                "                                                ".to_string(),
+            ]
+        } else {
+            // Light theme: Zen minimalist
+            vec![
+                "                                                ".to_string(),
+                "                                                ".to_string(),
+                "            F  e  e  d  r                      ".to_string(),
+                "                                                ".to_string(),
+                "         ─────────────────                     ".to_string(),
+                "                                                ".to_string(),
+                "         A mindful RSS reader                   ".to_string(),
+                "                                                ".to_string(),
+                "                                                ".to_string(),
+                "  🍃  Begin by adding your first feed           ".to_string(),
+                "       Press 'a' to add a feed URL              ".to_string(),
+                "                                                ".to_string(),
+                "                                                ".to_string(),
+            ]
+        }
+    }
+
+    /// Get theme-specific icon prefix
+    pub fn get_icon_feed(&self) -> &str {
+        if self.border_normal == BorderType::Double {
+            "◈" // Dark: tech diamond
+        } else {
+            "🍃" // Light: leaf
+        }
+    }
+
+    pub fn get_icon_article(&self) -> &str {
+        if self.border_normal == BorderType::Double {
+            "◇" // Dark: hollow diamond
+        } else {
+            "📄" // Light: paper
+        }
+    }
+
+    pub fn get_icon_search(&self) -> &str {
+        if self.border_normal == BorderType::Double {
+            "◎" // Dark: target
+        } else {
+            "🔍" // Light: magnifying glass
+        }
+    }
+
+    pub fn get_icon_dashboard(&self) -> &str {
+        if self.border_normal == BorderType::Double {
+            "◢◣" // Dark: tech brackets
+        } else {
+            "☀️" // Light: sun
+        }
+    }
+
+    pub fn get_icon_error(&self) -> &str {
+        "⚠" // Universal warning icon for both themes
+    }
+
+    pub fn get_icon_success(&self) -> &str {
+        "✓" // Universal checkmark for both themes
     }
 }
 
@@ -157,8 +311,8 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         View::CategoryManagement => 4,
     };
 
-    // Enhanced loading animation with better symbols
-    let loading_symbols = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    // Theme-specific loading animation
+    let loading_symbols = colors.get_loading_frames();
 
     // Create title with loading indicator if loading
     let title = if app.is_loading {
@@ -167,16 +321,21 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
             loading_symbols[app.loading_indicator % loading_symbols.len()]
         )
     } else {
-        " 📰 Feedr ".to_string()
+        format!(" {} Feedr ", colors.get_icon_dashboard())
     };
 
-    // Create tab highlight effect with better visual distinction
+    // Create tab highlight effect with theme-specific indicators
+    let selection_indicator = colors.get_selection_indicator();
     let tabs = Tabs::new(
         titles
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let prefix = if i == selected_tab { "● " } else { "  " };
+                let prefix = if i == selected_tab {
+                    format!("{} ", selection_indicator)
+                } else {
+                    "  ".to_string()
+                };
                 Line::from(vec![Span::styled(
                     format!("{}{}", prefix, t),
                     if i == selected_tab {
@@ -194,9 +353,9 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         Block::default()
             .borders(Borders::ALL)
             .border_type(if app.is_loading {
-                ACTIVE_BORDER
+                colors.border_active
             } else {
-                NORMAL_BORDER
+                colors.border_normal
             })
             .border_style(Style::default().fg(if app.is_loading {
                 colors.highlight
@@ -219,15 +378,16 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
 }
 
 fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
+    let search_icon = colors.get_icon_search();
     let mut title = if app.is_searching {
-        format!(" 🔍 Search Results: '{}' ", app.search_query)
+        format!(" {} Search Results: '{}' ", search_icon, app.search_query)
     } else {
-        " 🔔 Latest Updates ".to_string()
+        format!(" {} Latest Updates ", colors.get_icon_dashboard())
     };
 
     // Add filter indicators to title if any filters are active
     if app.filter_options.is_active() {
-        title = format!("{} | 🔍 Filtered", title);
+        title = format!("{} | {} Filtered", title, search_icon);
     }
 
     // Use the filtered items when filters are active
@@ -255,26 +415,8 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
 
             lines.join("\n")
         } else if app.feeds.is_empty() {
-            // Enhanced ASCII art with color coding and interactive suggestions
-            let ascii_art = vec![
-                "                                                ",
-                "  ███████╗███████╗███████╗██████╗ ██████╗      ",
-                "  ██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗     ",
-                "  █████╗  █████╗  █████╗  ██║  ██║██████╔╝     ",
-                "  ██╔══╝  ██╔══╝  ██╔══╝  ██║  ██║██╔══██╗     ",
-                "  ██║     ███████╗███████╗██████╔╝██║  ██║     ",
-                "  ╚═╝     ╚══════╝╚══════╝╚═════╝ ╚═╝  ╚═╝     ",
-                "                                                ",
-                "  Welcome to Feedr - Your Terminal RSS Reader   ",
-                " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ",
-                "                                                ",
-                "  📚 Get started by adding your favorite RSS feeds",
-                "  🔶 Press 'a' to add a feed URL                 ",
-                "                                                ",
-                "  Quick-add suggestions: (press the number key) ",
-                "    1️⃣ news.ycombinator.com/rss                  ",
-                "    2️⃣ feeds.feedburner.com/TechCrunch           ",
-            ];
+            // Theme-specific ASCII art
+            let ascii_art = colors.get_dashboard_art();
             ascii_art.join("\n")
         } else {
             let empty_msg = [
@@ -289,50 +431,89 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
             empty_msg.join("\n")
         };
 
-        // Rich text for empty dashboard
+        // Rich text for empty dashboard with theme-specific styling
         let mut text = Text::default();
 
         if app.feeds.is_empty() && !app.is_searching {
-            // For welcome screen
+            // For welcome screen with theme-specific styling
             for line in message.lines() {
-                if line.contains("Welcome") {
+                // Dark theme patterns
+                if line.contains("███")
+                    || line.contains("╔")
+                    || line.contains("╗")
+                    || line.contains("║")
+                    || line.contains("╚")
+                    || line.contains("╝")
+                {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(colors.primary),
+                    )]));
+                } else if line.contains("◢◣") || line.contains("◤◥") || line.contains("▸")
+                {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default()
+                            .fg(colors.highlight)
+                            .add_modifier(Modifier::BOLD),
+                    )]));
+                } else if line.contains("NEURAL")
+                    || line.contains("INTERFACE")
+                    || line.contains("CYBER")
+                {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
                         Style::default()
                             .fg(colors.accent)
                             .add_modifier(Modifier::BOLD),
                     )]));
-                } else if line.contains("Press") {
-                    text.lines.push(Line::from(vec![Span::styled(
-                        line,
-                        Style::default().fg(colors.highlight),
-                    )]));
-                } else if line.contains("Some suggestions") {
-                    text.lines.push(Line::from(vec![Span::styled(
-                        line,
-                        Style::default()
-                            .fg(colors.secondary)
-                            .add_modifier(Modifier::BOLD),
-                    )]));
-                } else if line.contains("•") {
-                    text.lines.push(Line::from(vec![Span::styled(
-                        line,
-                        Style::default().fg(colors.primary),
-                    )]));
-                } else if line.contains("Get started") {
-                    text.lines.push(Line::from(vec![Span::styled(
-                        line,
-                        Style::default().fg(colors.text),
-                    )]));
-                } else if line.contains("━") {
+                } else if line.contains("═══") || line.contains("───") {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
                         Style::default().fg(colors.border),
                     )]));
-                } else if line.contains("███") {
+                } else if line.contains("INITIALIZE")
+                    || line.contains("CONNECT")
+                    || line.contains("NO_SIGNAL")
+                    || line.contains("INIT_FEED")
+                {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
-                        Style::default().fg(colors.primary),
+                        Style::default().fg(colors.secondary),
+                    )]));
+                // Light theme patterns
+                } else if line.contains("F  e  e  d  r") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default()
+                            .fg(colors.primary)
+                            .add_modifier(Modifier::BOLD),
+                    )]));
+                } else if line.contains("mindful") || line.contains("Begin") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(colors.text),
+                    )]));
+                } else if line.contains("Press 'a'") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(colors.highlight),
+                    )]));
+                } else if line.contains("🍃") {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(colors.success),
+                    )]));
+                } else if line.contains("_")
+                    || line.contains("( )")
+                    || line.contains("|")
+                    || line.contains("/ \\")
+                    || line.contains("/   \\")
+                    || line.contains("-------")
+                {
+                    text.lines.push(Line::from(vec![Span::styled(
+                        line,
+                        Style::default().fg(colors.secondary),
                     )]));
                 } else {
                     text.lines.push(Line::from(line));
@@ -341,7 +522,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         } else {
             // For empty search or empty dashboard
             for line in message.lines() {
-                if line.contains("🔍") || line.contains("📭") {
+                if line.contains("🔍") || line.contains("📭") || line.contains(search_icon) {
                     text.lines.push(Line::from(vec![Span::styled(
                         line,
                         Style::default().fg(colors.secondary),
@@ -367,7 +548,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
                 .title(title)
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_type(NORMAL_BORDER)
+                .border_type(colors.border_normal)
                 .border_style(Style::default().fg(colors.border))
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(2, 2, 2, 2)),
@@ -382,7 +563,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
 
         text.lines.push(Line::from(""));
         text.lines.push(Line::from(Span::styled(
-            "       🔍       ",
+            format!("       {}       ", search_icon),
             Style::default().fg(colors.secondary),
         )));
         text.lines.push(Line::from(""));
@@ -408,7 +589,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
                 .title(title)
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_type(NORMAL_BORDER)
+                .border_type(colors.border_normal)
                 .border_style(Style::default().fg(colors.border))
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(2, 2, 2, 2)),
@@ -418,7 +599,9 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         return;
     }
 
-    // For non-empty dashboard, create richly formatted items with modern styling
+    // For non-empty dashboard, create richly formatted items with theme-specific styling
+    let arrow = colors.get_arrow_right();
+    let success_icon = colors.get_icon_success();
     let items: Vec<ListItem> = items_to_display
         .iter()
         .enumerate()
@@ -433,12 +616,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
             let is_selected = app.selected_item == Some(idx);
             let is_read = app.is_item_read(feed_idx, item_idx);
 
-            // Create clearer visual group with better hierarchy
+            // Create clearer visual group with theme-specific hierarchy
             ListItem::new(vec![
-                // Feed source with modern indicator
+                // Feed source with theme-specific indicator
                 Line::from(vec![
                     Span::styled(
-                        if is_selected { "▸ " } else { "  " },
+                        if is_selected {
+                            format!("{} ", arrow)
+                        } else {
+                            "  ".to_string()
+                        },
                         Style::default().fg(colors.highlight),
                     ),
                     Span::styled(
@@ -452,7 +639,11 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
-                        if is_read { " ✓" } else { "" },
+                        if is_read {
+                            format!(" {}", success_icon)
+                        } else {
+                            "".to_string()
+                        },
                         Style::default().fg(colors.success),
                     ),
                 ]),
@@ -498,7 +689,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
                 .title(title)
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_type(NORMAL_BORDER)
+                .border_type(colors.border_normal)
                 .border_style(Style::default().fg(colors.border))
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(2, 1, 1, 1)),
@@ -541,54 +732,63 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
     f.render_widget(title_para, chunks[0]);
 
     if app.feeds.is_empty() {
-        // Restore the stylized ASCII robot penguin
+        // Theme-specific empty feed ASCII art
         let mut text = Text::default();
+        let art_lines = colors.get_empty_feed_art();
 
-        // Stylized ASCII robot penguin
-        text.lines.push(Line::from(Span::styled(
-            "                                           ",
-            Style::default().fg(colors.muted),
-        )));
-        text.lines.push(Line::from(Span::styled(
-            "       .---.                               ",
-            Style::default().fg(colors.primary),
-        )));
-        text.lines.push(Line::from(vec![
-            Span::styled("      |", Style::default().fg(colors.primary)),
-            Span::styled("o_o", Style::default().fg(colors.accent)),
-            Span::styled(
-                " |                              ",
-                Style::default().fg(colors.primary),
-            ),
-        ]));
-        text.lines.push(Line::from(vec![
-            Span::styled("      |", Style::default().fg(colors.primary)),
-            Span::styled(":_/", Style::default().fg(colors.secondary)),
-            Span::styled(
-                " |                              ",
-                Style::default().fg(colors.primary),
-            ),
-        ]));
-        text.lines.push(Line::from(Span::styled(
-            "     //   \\ \\                             ",
-            Style::default().fg(colors.primary),
-        )));
-        text.lines.push(Line::from(Span::styled(
-            "    (|     | )                            ",
-            Style::default().fg(colors.primary),
-        )));
-        text.lines.push(Line::from(Span::styled(
-            "   /'\\_   _/`\\                           ",
-            Style::default().fg(colors.primary),
-        )));
-        text.lines.push(Line::from(Span::styled(
-            "   \\___)=(___/                           ",
-            Style::default().fg(colors.primary),
-        )));
-        text.lines.push(Line::from(Span::styled(
-            "                                           ",
-            Style::default().fg(colors.muted),
-        )));
+        for line in &art_lines {
+            // Style based on theme
+            if colors.border_normal == BorderType::Double {
+                // Dark theme styling
+                if line.contains("╔")
+                    || line.contains("╗")
+                    || line.contains("║")
+                    || line.contains("╚")
+                    || line.contains("╝")
+                {
+                    text.lines.push(Line::from(Span::styled(
+                        line,
+                        Style::default().fg(colors.primary),
+                    )));
+                } else if line.contains("◢◣") || line.contains("◤◥") {
+                    text.lines.push(Line::from(Span::styled(
+                        line,
+                        Style::default().fg(colors.accent),
+                    )));
+                } else if line.contains("CYBER")
+                    || line.contains("NO_SIGNAL")
+                    || line.contains("INIT_FEED")
+                {
+                    text.lines.push(Line::from(Span::styled(
+                        line,
+                        Style::default().fg(colors.secondary),
+                    )));
+                } else if line.contains("═══") {
+                    text.lines.push(Line::from(Span::styled(
+                        line,
+                        Style::default().fg(colors.highlight),
+                    )));
+                } else {
+                    text.lines.push(Line::from(line.as_str()));
+                }
+            } else {
+                // Light theme styling
+                if line.contains("_")
+                    || line.contains("( )")
+                    || line.contains("|")
+                    || line.contains("/")
+                    || line.contains("\\")
+                    || line.contains("-")
+                {
+                    text.lines.push(Line::from(Span::styled(
+                        line,
+                        Style::default().fg(colors.primary),
+                    )));
+                } else {
+                    text.lines.push(Line::from(line.as_str()));
+                }
+            }
+        }
 
         // Help message
         text.lines.push(Line::from(Span::styled(
@@ -606,12 +806,13 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
             Style::default().fg(colors.highlight),
         )));
 
+        let feed_icon = colors.get_icon_feed();
         let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
             Block::default()
-                .title(" 📋 Feeds ")
+                .title(format!(" {} Feeds ", feed_icon))
                 .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
-                .border_type(NORMAL_BORDER)
+                .border_type(colors.border_normal)
                 .border_style(Style::default().fg(colors.border))
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(2, 2, 2, 2)),
@@ -666,12 +867,15 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         })
         .collect();
 
+    let feed_icon = colors.get_icon_feed();
+    let arrow = colors.get_arrow_right();
+    let highlight_symbol = format!("{} ", arrow);
     let feeds = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(NORMAL_BORDER)
-                .title(" 📋 Feeds ")
+                .border_type(colors.border_normal)
+                .title(format!(" {} Feeds ", feed_icon))
                 .title_alignment(Alignment::Center)
                 .border_style(Style::default().fg(colors.border))
                 .style(Style::default().bg(colors.surface))
@@ -683,7 +887,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
                 .fg(colors.highlight)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol("▸ ");
+        .highlight_symbol(&highlight_symbol);
 
     // Create a mutable ListState to track selection
     let mut list_state = ListState::default();
@@ -708,15 +912,21 @@ pub fn extract_domain(url: &str) -> String {
 
 fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     if let Some(feed) = app.current_feed() {
-        let title = format!(" 📰 {} ", feed.title);
+        let feed_icon = colors.get_icon_feed();
+        let title = format!(" {} {} ", feed_icon, feed.title);
 
         if feed.items.is_empty() {
             // Empty feed visualization
             let mut text = Text::default();
+            let empty_icon = if colors.border_normal == BorderType::Double {
+                "◇" // Dark: hollow diamond
+            } else {
+                "📭" // Light: mailbox
+            };
 
             text.lines.push(Line::from(""));
             text.lines.push(Line::from(Span::styled(
-                "       📭       ",
+                format!("       {}       ", empty_icon),
                 Style::default().fg(colors.secondary),
             )));
             text.lines.push(Line::from(""));
@@ -742,7 +952,7 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
                     .title(title)
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
-                    .border_type(NORMAL_BORDER)
+                    .border_type(colors.border_normal)
                     .border_style(Style::default().fg(colors.border))
                     .style(Style::default().bg(colors.surface))
                     .padding(Padding::new(2, 2, 2, 2)),
@@ -752,7 +962,9 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
             return;
         }
 
-        // Enhanced feed items with modern, clean layout
+        // Enhanced feed items with theme-specific styling
+        let arrow = colors.get_arrow_right();
+        let success_icon = colors.get_icon_success();
         let items: Vec<ListItem> = feed
             .items
             .iter()
@@ -779,12 +991,16 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
                     "".to_string()
                 };
 
-                // Create compact but readable item layout
+                // Create compact but readable item layout with theme-specific indicators
                 let mut lines = vec![
                     // Title with read indicator
                     Line::from(vec![
                         Span::styled(
-                            if is_selected { "▸ " } else { "  " },
+                            if is_selected {
+                                format!("{} ", arrow)
+                            } else {
+                                "  ".to_string()
+                            },
                             Style::default().fg(colors.highlight),
                         ),
                         Span::styled(
@@ -804,7 +1020,11 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
                                 }),
                         ),
                         Span::styled(
-                            if is_read { " ✓" } else { "" },
+                            if is_read {
+                                format!(" {}", success_icon)
+                            } else {
+                                "".to_string()
+                            },
                             Style::default().fg(colors.success),
                         ),
                     ]),
@@ -861,7 +1081,7 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
                     .title(title)
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
-                    .border_type(NORMAL_BORDER)
+                    .border_type(colors.border_normal)
                     .border_style(Style::default().fg(colors.border))
                     .style(Style::default().bg(colors.surface))
                     .padding(Padding::new(2, 1, 1, 1)),
@@ -970,13 +1190,14 @@ fn render_item_detail<B: Backend>(
             ]));
         }
 
+        let article_icon = colors.get_icon_article();
         let header = Paragraph::new(header_lines)
             .block(
                 Block::default()
-                    .title(" 📄 Article ")
+                    .title(format!(" {} Article ", article_icon))
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
-                    .border_type(NORMAL_BORDER)
+                    .border_type(colors.border_normal)
                     .border_style(Style::default().fg(colors.border))
                     .style(Style::default().bg(colors.surface))
                     .padding(Padding::new(3, 3, 1, 1)), // Increased horizontal padding
@@ -1015,29 +1236,38 @@ fn render_item_detail<B: Backend>(
         app.update_detail_max_scroll(content_lines, viewport_height);
         app.clamp_detail_scroll();
 
-        // Create enhanced scroll indicator
+        // Create theme-specific scroll indicator
+        let scroll_arrows = if colors.border_normal == BorderType::Double {
+            ("▼", "▲") // Dark: solid arrows
+        } else {
+            ("↓", "↑") // Light: simple arrows
+        };
+
         let scroll_indicator = if app.detail_max_scroll > 0 {
             let scroll_pct =
                 (app.detail_vertical_scroll as f32 / app.detail_max_scroll as f32 * 100.0) as u16;
             if app.detail_vertical_scroll == 0 {
-                " 📝 Article Content · Scroll ↓ for more ".to_string()
+                format!(
+                    " {} Article Content · Scroll {} for more ",
+                    article_icon, scroll_arrows.0
+                )
             } else if app.detail_vertical_scroll >= app.detail_max_scroll {
-                " 📝 Article Content · End of article ".to_string()
+                format!(" {} Article Content · End of article ", article_icon)
             } else {
-                format!(" 📝 Article Content · {}% ", scroll_pct)
+                format!(" {} Article Content · {}% ", article_icon, scroll_pct)
             }
         } else {
-            " 📝 Article Content ".to_string()
+            format!(" {} Article Content ", article_icon)
         };
 
-        // Create content paragraph with enhanced reading experience
+        // Create content paragraph with theme-specific styling
         let content = Paragraph::new(description)
             .block(
                 Block::default()
                     .title(scroll_indicator)
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
-                    .border_type(NORMAL_BORDER)
+                    .border_type(colors.border_normal)
                     .border_style(Style::default().fg(colors.border))
                     .style(Style::default().bg(colors.surface))
                     .padding(Padding::new(4, 4, 2, 2)), // Generous padding for reading comfort
@@ -1127,15 +1357,21 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
             }
         }
 
+        let command_icon = if colors.border_normal == BorderType::Double {
+            "◈" // Dark: tech diamond
+        } else {
+            "💡" // Light: lightbulb
+        };
+
         let help = Paragraph::new(Line::from(spans))
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_type(NORMAL_BORDER)
+                    .border_type(colors.border_normal)
                     .border_style(Style::default().fg(colors.border))
                     .style(Style::default().bg(colors.surface))
-                    .title(" 💡 Commands ")
+                    .title(format!(" {} Commands ", command_icon))
                     .title_alignment(Alignment::Center)
                     .padding(Padding::new(1, 1, 0, 0)),
             );
@@ -1149,11 +1385,14 @@ fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str, colors: &ColorS
     // Clear the background
     f.render_widget(Clear, area);
 
-    // Create a modern error modal
+    // Theme-specific error icon
+    let error_icon = colors.get_icon_error();
+
+    // Create a theme-specific error modal
     let error_lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "⚠ Error",
+            format!("{} Error", error_icon),
             Style::default()
                 .fg(colors.error)
                 .add_modifier(Modifier::BOLD),
@@ -1171,7 +1410,7 @@ fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str, colors: &ColorS
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(FOCUS_BORDER)
+                .border_type(colors.border_focus_type)
                 .border_style(Style::default().fg(colors.error))
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(3, 3, 2, 2)),
@@ -1183,7 +1422,8 @@ fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str, colors: &ColorS
 }
 
 fn render_success_notification<B: Backend>(f: &mut Frame<B>, message: &str, colors: &ColorScheme) {
-    // Create a modern notification in the top-right corner
+    // Create a theme-specific notification in the top-right corner
+    let success_icon = colors.get_icon_success();
     let msg_width = (message.len() + 6).min(50) as u16;
     let area = Rect {
         x: f.size().width.saturating_sub(msg_width + 2),
@@ -1195,9 +1435,9 @@ fn render_success_notification<B: Backend>(f: &mut Frame<B>, message: &str, colo
     // Clear the background
     f.render_widget(Clear, area);
 
-    // Create a clean success notification
+    // Create a theme-specific success notification
     let success_text = Paragraph::new(Line::from(vec![Span::styled(
-        format!(" {} ", message),
+        format!(" {} {} ", success_icon, message),
         Style::default()
             .fg(colors.success)
             .add_modifier(Modifier::BOLD),
@@ -1205,7 +1445,7 @@ fn render_success_notification<B: Backend>(f: &mut Frame<B>, message: &str, colo
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
+            .border_type(colors.border_normal)
             .border_style(Style::default().fg(colors.success))
             .style(Style::default().bg(colors.surface)),
     )
@@ -1220,15 +1460,24 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
     // Clear the background
     f.render_widget(Clear, area);
 
-    // Create modal title and help text based on mode
+    // Create modal title and help text with theme-specific icons
     let (title, help_text, icon) = if matches!(app.input_mode, InputMode::InsertUrl) {
+        let link_icon = if colors.border_normal == BorderType::Double {
+            "◎" // Dark: target/link
+        } else {
+            "🔗" // Light: link
+        };
         (
             "Add Feed URL",
             "Enter the RSS feed URL and press Enter",
-            "🔗",
+            link_icon,
         )
     } else {
-        ("Search", "Enter search terms and press Enter", "🔍")
+        (
+            "Search",
+            "Enter search terms and press Enter",
+            colors.get_icon_search(),
+        )
     };
 
     // Create a modern input modal
@@ -1287,7 +1536,7 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
     let input_paragraph = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(FOCUS_BORDER)
+            .border_type(colors.border_focus_type)
             .border_style(Style::default().fg(colors.border_focus))
             .style(Style::default().bg(colors.surface))
             .padding(Padding::new(3, 3, 2, 2)),
@@ -1302,11 +1551,17 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSc
     // Clear the area
     f.render_widget(Clear, area);
 
-    // Create filter selection UI
+    // Theme-specific filter icon
+    let filter_icon = colors.get_icon_search();
+
+    // Create filter selection UI with theme-specific styling
     let mut text = vec![
         // Header
         Line::from(vec![
-            Span::styled("  🔍  ", Style::default().fg(colors.primary)),
+            Span::styled(
+                format!("  {}  ", filter_icon),
+                Style::default().fg(colors.primary),
+            ),
             Span::styled(
                 "Feed Filters",
                 Style::default()
@@ -1470,10 +1725,10 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSc
     let filter_paragraph = Paragraph::new(text).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(FOCUS_BORDER)
+            .border_type(colors.border_focus_type)
             .border_style(Style::default().fg(colors.border_focus))
             .style(Style::default().bg(colors.surface))
-            .title(" 🔍 Filter Options ")
+            .title(format!(" {} Filter Options ", filter_icon))
             .title_alignment(Alignment::Center)
             .padding(Padding::new(3, 3, 2, 2)),
     );
@@ -1673,6 +1928,13 @@ fn render_category_management<B: Backend>(
         ])
         .split(area);
 
+    // Theme-specific category icon
+    let category_icon = if colors.border_normal == BorderType::Double {
+        "◈◈" // Dark: double tech diamond
+    } else {
+        "📂" // Light: folder
+    };
+
     // Add a title block
     let title = match &app.category_action {
         Some(CategoryAction::AddFeedToCategory(url)) => {
@@ -1681,14 +1943,18 @@ fn render_category_management<B: Backend>(
             let feed_title = feed_idx
                 .and_then(|idx| app.feeds.get(idx))
                 .map_or("Unknown Feed", |feed| feed.title.as_str());
-            format!(" 📂 Add '{}' to Category ", truncate_str(feed_title, 30))
+            format!(
+                " {} Add '{}' to Category ",
+                category_icon,
+                truncate_str(feed_title, 30)
+            )
         }
-        _ => " 📂 Category Management ".to_string(),
+        _ => format!(" {} Category Management ", category_icon),
     };
 
     let title_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(NORMAL_BORDER)
+        .border_type(colors.border_normal)
         .title(title)
         .title_alignment(Alignment::Center)
         .border_style(Style::default().fg(colors.border))
@@ -1697,7 +1963,14 @@ fn render_category_management<B: Backend>(
 
     f.render_widget(title_block, chunks[0]);
 
-    // Prepare list items for categories and their feeds
+    // Prepare list items for categories and their feeds with theme-specific indicators
+    let expand_icon = if colors.border_normal == BorderType::Double {
+        ("▼", "▶") // Dark: solid arrows
+    } else {
+        ("⌄", "›") // Light: minimal arrows
+    };
+    let feed_arrow = colors.get_arrow_right();
+
     let mut list_items = Vec::new();
     let mut list_indices = Vec::new(); // To map UI index to category index
 
@@ -1708,8 +1981,12 @@ fn render_category_management<B: Backend>(
         ))));
     } else {
         for (cat_idx, category) in app.categories.iter().enumerate() {
-            // Add category to the list
-            let icon = if category.expanded { "▼" } else { "▶" };
+            // Add category to the list with theme-specific expansion indicator
+            let icon = if category.expanded {
+                expand_icon.0
+            } else {
+                expand_icon.1
+            };
             let feed_count = category.feed_count();
             let count_text = if feed_count == 1 {
                 "1 feed".to_string()
@@ -1748,7 +2025,7 @@ fn render_category_management<B: Backend>(
                     };
 
                     list_items.push(ListItem::new(Line::from(Span::styled(
-                        format!("   → {}", truncate_str(&feed.title, 40)),
+                        format!("   {} {}", feed_arrow, truncate_str(&feed.title, 40)),
                         feed_style,
                     ))));
                     list_indices.push(None); // None means this is a feed, not a category
@@ -1770,8 +2047,8 @@ fn render_category_management<B: Backend>(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(NORMAL_BORDER)
-                .title(" Categories ")
+                .border_type(colors.border_normal)
+                .title(format!(" {} Categories ", category_icon))
                 .border_style(Style::default().fg(colors.border))
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(2, 1, 1, 1)),
@@ -1806,7 +2083,7 @@ fn render_category_management<B: Backend>(
 
     let help_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(NORMAL_BORDER)
+        .border_type(colors.border_normal)
         .title(" Controls ")
         .border_style(Style::default().fg(colors.muted));
 
@@ -1843,21 +2120,23 @@ fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: 
         _ => " Category Name ",
     };
 
-    // Create title block
+    // Create title block with theme-specific border
     let title_block = Block::default()
         .borders(Borders::ALL)
         .title(title)
         .title_alignment(Alignment::Center)
+        .border_type(colors.border_normal)
         .border_style(Style::default().fg(colors.border))
         .style(Style::default().bg(colors.surface))
         .padding(Padding::new(1, 1, 0, 0));
 
     f.render_widget(title_block, chunks[0]);
 
-    // Create input field
+    // Create input field with theme-specific focus border
     let input_block = Block::default()
         .borders(Borders::ALL)
         .title(" Name ")
+        .border_type(colors.border_focus_type)
         .border_style(Style::default().fg(colors.border_focus))
         .style(Style::default().bg(colors.surface))
         .padding(Padding::new(1, 1, 0, 0));
@@ -1873,9 +2152,10 @@ fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: 
     let cursor_y = chunks[1].y + 1;
     f.set_cursor(cursor_x, cursor_y);
 
-    // Help text
+    // Help text with theme-specific border
     let help_block = Block::default()
         .borders(Borders::ALL)
+        .border_type(colors.border_normal)
         .title(" Controls ")
         .border_style(Style::default().fg(colors.muted));
 
