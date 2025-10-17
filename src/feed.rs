@@ -67,19 +67,35 @@ impl FeedCategory {
 }
 
 impl Feed {
+    /// Fetch and parse a feed from a URL with default timeout
     pub fn from_url(url: &str) -> Result<Self> {
+        Self::from_url_with_config(url, 15, None)
+    }
+
+    /// Fetch and parse a feed from a URL with custom timeout
+    pub fn from_url_with_timeout(url: &str, timeout_secs: u64) -> Result<Self> {
+        Self::from_url_with_config(url, timeout_secs, None)
+    }
+
+    /// Fetch and parse a feed from a URL with custom timeout and user agent
+    pub fn from_url_with_config(
+        url: &str,
+        timeout_secs: u64,
+        user_agent: Option<&str>,
+    ) -> Result<Self> {
+        let default_user_agent =
+            "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)";
+        let ua = user_agent.unwrap_or(default_user_agent);
+
         let client = reqwest::blocking::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
-            .timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(timeout_secs))
             .build()
             .context("Failed to create HTTP client")?;
 
         let response = client
             .get(url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)",
-            )
+            .header("User-Agent", ua)
             .header(
                 "Accept",
                 "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",

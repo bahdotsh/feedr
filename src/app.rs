@@ -1,10 +1,11 @@
+use crate::config::Config;
 use crate::feed::{Feed, FeedCategory, FeedItem};
 use crate::ui::extract_domain;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Default)]
 pub struct FilterOptions {
@@ -61,6 +62,7 @@ pub enum View {
 
 #[derive(Clone, Debug)]
 pub struct App {
+    pub config: Config,
     pub feeds: Vec<Feed>,
     pub bookmarks: Vec<String>,
     pub categories: Vec<FeedCategory>,
@@ -108,6 +110,12 @@ impl Default for App {
 
 impl App {
     pub fn new() -> Self {
+        // Load configuration
+        let config = Config::load().unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to load config, using defaults: {}", e);
+            Config::default()
+        });
+
         let saved_data = Self::load_saved_data().unwrap_or_else(|_| SavedData {
             bookmarks: vec![],
             categories: vec![],
@@ -115,6 +123,7 @@ impl App {
         });
 
         let mut app = Self {
+            config,
             feeds: Vec::new(),
             bookmarks: saved_data.bookmarks,
             categories: saved_data.categories,
@@ -149,8 +158,10 @@ impl App {
 
     pub fn load_bookmarked_feeds(&mut self) {
         self.feeds.clear();
+        let timeout = self.config.network.http_timeout;
+        let user_agent = &self.config.network.user_agent;
         for url in &self.bookmarks {
-            match Feed::from_url(url) {
+            match Feed::from_url_with_config(url, timeout, Some(user_agent)) {
                 Ok(feed) => self.feeds.push(feed),
                 Err(_) => { /* Skip failed feeds */ }
             }
@@ -189,11 +200,62 @@ impl App {
         Ok(())
     }
 
-    fn data_path() -> std::path::PathBuf {
+    /// Get the data file path with XDG support and backwards compatibility
+    fn data_path() -> PathBuf {
+        // New XDG-compliant location
+        let xdg_path = Self::xdg_data_path();
+
+        // Old location for backwards compatibility
+        let old_path = Self::legacy_data_path();
+
+        // If old location exists and new doesn't, migrate
+        if old_path.exists() && !xdg_path.exists() {
+            if let Err(e) = Self::migrate_data_file(&old_path, &xdg_path) {
+                eprintln!("Warning: Failed to migrate data file: {}", e);
+                // Fall back to old path if migration fails
+                return old_path;
+            }
+            eprintln!(
+                "Data file migrated from {} to {}",
+                old_path.display(),
+                xdg_path.display()
+            );
+        }
+
+        xdg_path
+    }
+
+    /// Get the XDG-compliant data path (~/.local/share/feedr/feedr_data.json)
+    fn xdg_data_path() -> PathBuf {
+        let mut path = dirs::data_local_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
+        path.push("feedr");
+        path.push("feedr_data.json");
+        path
+    }
+
+    /// Get the legacy data path for backwards compatibility
+    fn legacy_data_path() -> PathBuf {
         let mut path = dirs::data_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
         path.push("feedr");
         path.push("feedr_data.json");
         path
+    }
+
+    /// Migrate data from old location to new XDG location
+    fn migrate_data_file(old_path: &Path, new_path: &Path) -> Result<()> {
+        // Ensure the target directory exists
+        if let Some(parent) = new_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Copy the file to the new location
+        fs::copy(old_path, new_path)?;
+
+        // Optionally, remove the old file after successful migration
+        // Commenting this out for extra safety - users can manually delete if desired
+        // fs::remove_file(old_path)?;
+
+        Ok(())
     }
 
     pub fn apply_filters(&mut self) {
@@ -360,8 +422,9 @@ impl App {
             (None, None) => std::cmp::Ordering::Equal,
         });
 
-        // Add items to dashboard (limited to most recent 100 for performance)
-        for (feed_idx, item_idx, _) in all_items.into_iter().take(100) {
+        // Add items to dashboard (limited by config)
+        let max_items = self.config.general.max_dashboard_items;
+        for (feed_idx, item_idx, _) in all_items.into_iter().take(max_items) {
             self.dashboard_items.push((feed_idx, item_idx));
         }
 
@@ -370,7 +433,9 @@ impl App {
     }
 
     pub fn add_feed(&mut self, url: &str) -> Result<()> {
-        let feed = Feed::from_url(url)?;
+        let timeout = self.config.network.http_timeout;
+        let user_agent = &self.config.network.user_agent;
+        let feed = Feed::from_url_with_config(url, timeout, Some(user_agent))?;
         self.feeds.push(feed);
         if !self.bookmarks.contains(&url.to_string()) {
             self.bookmarks.push(url.to_string());
@@ -532,10 +597,12 @@ impl App {
         // Instead of threading, we'll do a synchronous refresh
         // but track the loading state to show the animation
         let urls = self.bookmarks.clone();
+        let timeout = self.config.network.http_timeout;
+        let user_agent = self.config.network.user_agent.clone();
         self.feeds.clear();
 
         for url in &urls {
-            match Feed::from_url(url) {
+            match Feed::from_url_with_config(url, timeout, Some(&user_agent)) {
                 Ok(feed) => self.feeds.push(feed),
                 Err(e) => self.error = Some(format!("Failed to refresh feed {}: {}", url, e)),
             }
