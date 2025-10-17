@@ -75,6 +75,8 @@ pub struct App {
     pub selected_item: Option<usize>,
     pub view: View,
     pub error: Option<String>,
+    pub success_message: Option<String>,
+    pub success_message_time: Option<Instant>,
     pub search_query: String,
     pub is_searching: bool,
     pub filtered_items: Vec<(usize, usize)>, // (feed_idx, item_idx) for search results
@@ -139,6 +141,8 @@ impl App {
             selected_item: None,
             view: View::Dashboard,
             error: None,
+            success_message: None,
+            success_message_time: None,
             search_query: String::new(),
             is_searching: false,
             filtered_items: Vec::new(),
@@ -396,6 +400,27 @@ impl App {
             self.save_data()?;
         }
         Ok(())
+    }
+
+    // Toggle an item's read status and return whether it's now read
+    pub fn toggle_item_read(&mut self, feed_idx: usize, item_idx: usize) -> Result<bool> {
+        let item_id = self.get_item_id(feed_idx, item_idx);
+        if !item_id.is_empty() {
+            let is_now_read =
+                if let Some(pos) = self.read_items.iter().position(|id| id == &item_id) {
+                    // Item is read, mark as unread
+                    self.read_items.remove(pos);
+                    false
+                } else {
+                    // Item is unread, mark as read
+                    self.read_items.push(item_id);
+                    true
+                };
+            self.save_data()?;
+            Ok(is_now_read)
+        } else {
+            Ok(false)
+        }
     }
 
     // Check if an item is read

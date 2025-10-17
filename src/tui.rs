@@ -77,6 +77,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                 app.error = None;
             }
 
+            // Clear success message after a shorter timeout (1.5 seconds)
+            let success_timeout = Duration::from_millis(1500);
+            if let Some(msg_time) = app.success_message_time {
+                if app.success_message.is_some() && msg_time.elapsed() >= success_timeout {
+                    app.success_message = None;
+                    app.success_message_time = None;
+                }
+            }
+
             // Check if auto-refresh should trigger
             if app.should_auto_refresh() {
                 // Note: refresh_feeds() is synchronous and will block,
@@ -231,11 +240,19 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
                                 app.view = View::FeedItemDetail;
+                                // Auto-mark as read when viewing detail
+                                if let Err(e) = app.mark_item_as_read(feed_idx, item_idx) {
+                                    app.error = Some(format!("Failed to mark item as read: {}", e));
+                                }
                             } else if selected < app.dashboard_items.len() {
                                 let (feed_idx, item_idx) = app.dashboard_items[selected];
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
                                 app.view = View::FeedItemDetail;
+                                // Auto-mark as read when viewing detail
+                                if let Err(e) = app.mark_item_as_read(feed_idx, item_idx) {
+                                    app.error = Some(format!("Failed to mark item as read: {}", e));
+                                }
                             }
                         }
                     }
@@ -243,6 +260,47 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         if app.selected_item.is_some() {
                             if let Err(e) = app.open_current_item_in_browser() {
                                 app.error = Some(format!("Failed to open link: {}", e));
+                            }
+                        }
+                    }
+                    KeyCode::Char(' ') => {
+                        if let Some(selected) = app.selected_item {
+                            if app.is_searching && selected < app.filtered_items.len() {
+                                let (feed_idx, item_idx) = app.filtered_items[selected];
+                                match app.toggle_item_read(feed_idx, item_idx) {
+                                    Ok(is_now_read) => {
+                                        app.success_message = Some(if is_now_read {
+                                            "✓ Marked as read".to_string()
+                                        } else {
+                                            "○ Marked as unread".to_string()
+                                        });
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                    }
+                                    Err(e) => {
+                                        app.error =
+                                            Some(format!("Failed to toggle read status: {}", e));
+                                    }
+                                }
+                                // Reapply filters to update the display
+                                app.apply_filters();
+                            } else if selected < app.dashboard_items.len() {
+                                let (feed_idx, item_idx) = app.dashboard_items[selected];
+                                match app.toggle_item_read(feed_idx, item_idx) {
+                                    Ok(is_now_read) => {
+                                        app.success_message = Some(if is_now_read {
+                                            "✓ Marked as read".to_string()
+                                        } else {
+                                            "○ Marked as unread".to_string()
+                                        });
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                    }
+                                    Err(e) => {
+                                        app.error =
+                                            Some(format!("Failed to toggle read status: {}", e));
+                                    }
+                                }
+                                // Reapply filters to update the display
+                                app.apply_filters();
                             }
                         }
                     }
@@ -390,6 +448,26 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             }
                         }
                     }
+                    KeyCode::Char(' ') => {
+                        if let Some(feed_idx) = app.selected_feed {
+                            if let Some(item_idx) = app.selected_item {
+                                match app.toggle_item_read(feed_idx, item_idx) {
+                                    Ok(is_now_read) => {
+                                        app.success_message = Some(if is_now_read {
+                                            "✓ Marked as read".to_string()
+                                        } else {
+                                            "○ Marked as unread".to_string()
+                                        });
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                    }
+                                    Err(e) => {
+                                        app.error =
+                                            Some(format!("Failed to toggle read status: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 },
                 View::FeedItemDetail => match key.code {
@@ -456,6 +534,26 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Char('o') => {
                         if let Err(e) = app.open_current_item_in_browser() {
                             app.error = Some(format!("Failed to open link: {}", e));
+                        }
+                    }
+                    KeyCode::Char(' ') => {
+                        if let Some(feed_idx) = app.selected_feed {
+                            if let Some(item_idx) = app.selected_item {
+                                match app.toggle_item_read(feed_idx, item_idx) {
+                                    Ok(is_now_read) => {
+                                        app.success_message = Some(if is_now_read {
+                                            "✓ Marked as read".to_string()
+                                        } else {
+                                            "○ Marked as unread".to_string()
+                                        });
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                    }
+                                    Err(e) => {
+                                        app.error =
+                                            Some(format!("Failed to toggle read status: {}", e));
+                                    }
+                                }
+                            }
                         }
                     }
                     _ => {}
