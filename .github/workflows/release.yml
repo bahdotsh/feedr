@@ -129,11 +129,22 @@ jobs:
           strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
         fi
 
+    - name: Prepare binary for upload
+      shell: bash
+      run: |
+        cd target/${{ matrix.target }}/release/
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cp ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+        else
+          cp ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+        fi
+        ls -lh ${{ matrix.asset_name }}
+
     - name: Upload binary to release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ needs.create-release.outputs.version }}
-        files: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        files: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
 
   build-archives:
     name: Build Release Archives
