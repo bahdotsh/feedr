@@ -11,6 +11,8 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 - **Rich Content Display**: Beautiful formatting of articles with HTML-to-text conversion
 - **Smart Search**: Quickly find content across all your feeds
 - **Browser Integration**: Open articles in your default browser
+- **Background Refresh**: Automatic feed updates with configurable intervals and smart rate limiting
+- **Rate Limiting**: Prevents "too many requests" errors with per-domain request throttling (ideal for Reddit feeds)
 - **Configurable**: Customize timeouts, UI behavior, and default feeds via TOML config file
 - **XDG Compliant**: Follows standard directory specifications for configuration and data storage
 
@@ -109,8 +111,10 @@ The configuration file is automatically generated with default values on first r
 # Feedr Configuration File
 
 [general]
-max_dashboard_items = 100      # Maximum number of items shown on dashboard
-auto_refresh_interval = 0      # Auto-refresh interval in seconds (0 = disabled)
+max_dashboard_items = 100           # Maximum number of items shown on dashboard
+auto_refresh_interval = 0           # Auto-refresh interval in seconds (0 = disabled)
+refresh_enabled = false             # Enable automatic background refresh
+refresh_rate_limit_delay = 2000     # Delay in milliseconds between requests to same domain
 
 [network]
 http_timeout = 15              # HTTP request timeout in seconds
@@ -131,6 +135,8 @@ category = "News"
 #### General Settings
 - **max_dashboard_items**: Controls how many items are displayed on the dashboard (default: 100)
 - **auto_refresh_interval**: Automatically refresh feeds at specified interval in seconds (0 disables auto-refresh)
+- **refresh_enabled**: Master switch to enable/disable automatic background refresh (default: false)
+- **refresh_rate_limit_delay**: Delay in milliseconds between requests to the same domain to prevent "too many requests" errors (default: 2000ms). This is especially useful for Reddit feeds and other rate-limited services.
 
 #### Network Settings
 - **http_timeout**: Timeout for HTTP requests when fetching feeds (useful for slow connections)
@@ -139,6 +145,17 @@ category = "News"
 #### UI Settings
 - **tick_rate**: How frequently the UI updates in milliseconds (lower = more responsive, higher = less CPU usage)
 - **error_display_timeout**: How long error messages are displayed in milliseconds
+
+#### Background Refresh Example
+To enable automatic refresh every 5 minutes with rate limiting:
+```toml
+[general]
+refresh_enabled = true
+auto_refresh_interval = 300  # 5 minutes
+refresh_rate_limit_delay = 2000  # 2 seconds between requests to same domain
+```
+
+**Note**: Rate limiting groups feeds by domain and staggers requests to prevent hitting API limits. For example, if you have multiple Reddit feeds, they will be fetched with a 2-second delay between each request to avoid getting blocked.
 
 #### Default Feeds
 You can define feeds to be automatically loaded on first run:

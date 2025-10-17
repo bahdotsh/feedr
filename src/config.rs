@@ -24,6 +24,12 @@ pub struct GeneralConfig {
     /// Auto-refresh interval in seconds (0 = disabled)
     #[serde(default)]
     pub auto_refresh_interval: u64,
+    /// Enable automatic background refresh
+    #[serde(default)]
+    pub refresh_enabled: bool,
+    /// Delay in milliseconds between requests to the same domain (for rate limiting)
+    #[serde(default = "default_refresh_rate_limit_delay")]
+    pub refresh_rate_limit_delay: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -58,6 +64,10 @@ fn default_max_dashboard_items() -> usize {
     100
 }
 
+fn default_refresh_rate_limit_delay() -> u64 {
+    2000 // 2 seconds for Reddit safety
+}
+
 fn default_http_timeout() -> u64 {
     15
 }
@@ -79,6 +89,8 @@ impl Default for GeneralConfig {
         Self {
             max_dashboard_items: default_max_dashboard_items(),
             auto_refresh_interval: 0,
+            refresh_enabled: false,
+            refresh_rate_limit_delay: default_refresh_rate_limit_delay(),
         }
     }
 }
@@ -167,6 +179,18 @@ impl Config {
              \n\
              {}\n\
              \n\
+             # Background Refresh Settings:\n\
+             # - refresh_enabled: Enable automatic background refresh (default: false)\n\
+             # - auto_refresh_interval: Time in seconds between auto-refreshes (default: 0/disabled)\n\
+             # - refresh_rate_limit_delay: Delay in milliseconds between requests to same domain (default: 2000ms)\n\
+             #   This prevents \"too many requests\" errors, especially for Reddit feeds\n\
+             #\n\
+             # Example configuration for auto-refresh every 5 minutes:\n\
+             # [general]\n\
+             # refresh_enabled = true\n\
+             # auto_refresh_interval = 300\n\
+             # refresh_rate_limit_delay = 2000\n\
+             #\n\
              # Example default feeds configuration:\n\
              # [[default_feeds]]\n\
              # url = \"https://example.com/feed.xml\"\n\

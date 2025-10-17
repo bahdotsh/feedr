@@ -4,8 +4,10 @@ use crate::ui::extract_domain;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 #[derive(Clone, Debug, Default)]
 pub struct FilterOptions {
@@ -86,6 +88,9 @@ pub struct App {
     pub category_action: Option<CategoryAction>, // For category management
     pub detail_vertical_scroll: u16, // Vertical scroll value for item detail view
     pub detail_max_scroll: u16,  // Maximum scroll value for current content
+    pub last_refresh: Option<Instant>, // Track when last refresh occurred
+    pub refresh_in_progress: bool, // Prevent concurrent refreshes
+    pub last_domain_fetch: HashMap<String, Instant>, // Track last fetch time per domain for rate limiting
 }
 
 #[derive(Clone, Debug)]
@@ -147,6 +152,9 @@ impl App {
             category_action: None,
             detail_vertical_scroll: 0,
             detail_max_scroll: 0,
+            last_refresh: None,
+            refresh_in_progress: false,
+            last_domain_fetch: HashMap::new(),
         };
 
         // Load bookmarked feeds
@@ -593,23 +601,43 @@ impl App {
 
     pub fn refresh_feeds(&mut self) -> Result<()> {
         self.is_loading = true;
+        self.refresh_in_progress = true;
 
-        // Instead of threading, we'll do a synchronous refresh
-        // but track the loading state to show the animation
-        let urls = self.bookmarks.clone();
+        // Group feeds by domain for rate limiting
+        let mut domain_groups: HashMap<String, Vec<String>> = HashMap::new();
+        for url in &self.bookmarks {
+            let domain = Self::extract_domain_from_url(url);
+            domain_groups.entry(domain).or_default().push(url.clone());
+        }
+
         let timeout = self.config.network.http_timeout;
         let user_agent = self.config.network.user_agent.clone();
         self.feeds.clear();
 
-        for url in &urls {
-            match Feed::from_url_with_config(url, timeout, Some(&user_agent)) {
-                Ok(feed) => self.feeds.push(feed),
-                Err(e) => self.error = Some(format!("Failed to refresh feed {}: {}", url, e)),
+        // Process each domain group with rate limiting
+        for (domain, urls) in domain_groups {
+            // Calculate and apply required delay for this domain
+            let delay = self.calculate_required_delay(&domain);
+            if !delay.is_zero() {
+                std::thread::sleep(delay);
             }
+
+            // Fetch all feeds from this domain
+            for url in &urls {
+                match Feed::from_url_with_config(url, timeout, Some(&user_agent)) {
+                    Ok(feed) => self.feeds.push(feed),
+                    Err(e) => self.error = Some(format!("Failed to refresh feed {}: {}", url, e)),
+                }
+            }
+
+            // Update the last fetch time for this domain
+            self.last_domain_fetch.insert(domain, Instant::now());
         }
 
         self.update_dashboard();
         self.is_loading = false;
+        self.refresh_in_progress = false;
+        self.last_refresh = Some(Instant::now());
 
         Ok(())
     }
@@ -871,5 +899,110 @@ impl App {
     pub fn exit_detail_view(&mut self, new_view: View) {
         self.detail_vertical_scroll = 0;
         self.view = new_view;
+    }
+
+    /// Check if auto-refresh should trigger
+    pub fn should_auto_refresh(&self) -> bool {
+        if !self.config.general.refresh_enabled || self.config.general.auto_refresh_interval == 0 {
+            return false;
+        }
+
+        if self.refresh_in_progress {
+            return false;
+        }
+
+        if let Some(last_refresh) = self.last_refresh {
+            let elapsed = last_refresh.elapsed().as_secs();
+            elapsed >= self.config.general.auto_refresh_interval
+        } else {
+            // Never refreshed, so we should refresh
+            true
+        }
+    }
+
+    /// Extract domain from URL (e.g., "reddit.com" from "https://www.reddit.com/r/rust/.rss")
+    fn extract_domain_from_url(url: &str) -> String {
+        // Simple domain extraction
+        if let Some(domain_start) = url.find("://") {
+            let after_protocol = &url[domain_start + 3..];
+            let domain_end = after_protocol.find('/').unwrap_or(after_protocol.len());
+            let domain = &after_protocol[..domain_end];
+
+            // Remove www. prefix if present
+            domain.strip_prefix("www.").unwrap_or(domain).to_string()
+        } else {
+            // No protocol, try to extract domain directly
+            let domain_end = url.find('/').unwrap_or(url.len());
+            let domain = &url[..domain_end];
+
+            domain.strip_prefix("www.").unwrap_or(domain).to_string()
+        }
+    }
+
+    /// Calculate required delay before fetching from a domain
+    fn calculate_required_delay(&self, domain: &str) -> std::time::Duration {
+        if let Some(last_fetch) = self.last_domain_fetch.get(domain) {
+            let elapsed = last_fetch.elapsed();
+            let required_delay =
+                std::time::Duration::from_millis(self.config.general.refresh_rate_limit_delay);
+
+            if elapsed < required_delay {
+                required_delay - elapsed
+            } else {
+                std::time::Duration::from_secs(0)
+            }
+        } else {
+            std::time::Duration::from_secs(0)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_domain_from_url() {
+        assert_eq!(
+            App::extract_domain_from_url("https://www.reddit.com/r/rust/.rss"),
+            "reddit.com"
+        );
+        assert_eq!(
+            App::extract_domain_from_url("https://news.ycombinator.com/rss"),
+            "news.ycombinator.com"
+        );
+        assert_eq!(
+            App::extract_domain_from_url("http://example.com/feed.xml"),
+            "example.com"
+        );
+        assert_eq!(
+            App::extract_domain_from_url("https://www.example.com/"),
+            "example.com"
+        );
+    }
+
+    #[test]
+    fn test_should_auto_refresh() {
+        let mut app = App::new();
+
+        // Should not refresh when disabled
+        app.config.general.refresh_enabled = false;
+        app.config.general.auto_refresh_interval = 300;
+        assert!(!app.should_auto_refresh());
+
+        // Should not refresh when interval is 0
+        app.config.general.refresh_enabled = true;
+        app.config.general.auto_refresh_interval = 0;
+        assert!(!app.should_auto_refresh());
+
+        // Should refresh when enabled and never refreshed before
+        app.config.general.refresh_enabled = true;
+        app.config.general.auto_refresh_interval = 300;
+        app.last_refresh = None;
+        assert!(app.should_auto_refresh());
+
+        // Should not refresh when in progress
+        app.refresh_in_progress = true;
+        assert!(!app.should_auto_refresh());
     }
 }
