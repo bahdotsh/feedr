@@ -607,7 +607,7 @@ impl App {
         let mut domain_groups: HashMap<String, Vec<String>> = HashMap::new();
         for url in &self.bookmarks {
             let domain = Self::extract_domain_from_url(url);
-            domain_groups.entry(domain).or_insert_with(Vec::new).push(url.clone());
+            domain_groups.entry(domain).or_default().push(url.clone());
         }
 
         let timeout = self.config.network.http_timeout;
@@ -925,27 +925,17 @@ impl App {
         // Simple domain extraction
         if let Some(domain_start) = url.find("://") {
             let after_protocol = &url[domain_start + 3..];
-            let domain_end = after_protocol
-                .find('/')
-                .unwrap_or(after_protocol.len());
+            let domain_end = after_protocol.find('/').unwrap_or(after_protocol.len());
             let domain = &after_protocol[..domain_end];
-            
+
             // Remove www. prefix if present
-            if domain.starts_with("www.") {
-                domain[4..].to_string()
-            } else {
-                domain.to_string()
-            }
+            domain.strip_prefix("www.").unwrap_or(domain).to_string()
         } else {
             // No protocol, try to extract domain directly
             let domain_end = url.find('/').unwrap_or(url.len());
             let domain = &url[..domain_end];
-            
-            if domain.starts_with("www.") {
-                domain[4..].to_string()
-            } else {
-                domain.to_string()
-            }
+
+            domain.strip_prefix("www.").unwrap_or(domain).to_string()
         }
     }
 
@@ -953,10 +943,9 @@ impl App {
     fn calculate_required_delay(&self, domain: &str) -> std::time::Duration {
         if let Some(last_fetch) = self.last_domain_fetch.get(domain) {
             let elapsed = last_fetch.elapsed();
-            let required_delay = std::time::Duration::from_millis(
-                self.config.general.refresh_rate_limit_delay
-            );
-            
+            let required_delay =
+                std::time::Duration::from_millis(self.config.general.refresh_rate_limit_delay);
+
             if elapsed < required_delay {
                 required_delay - elapsed
             } else {
@@ -995,23 +984,23 @@ mod tests {
     #[test]
     fn test_should_auto_refresh() {
         let mut app = App::new();
-        
+
         // Should not refresh when disabled
         app.config.general.refresh_enabled = false;
         app.config.general.auto_refresh_interval = 300;
         assert!(!app.should_auto_refresh());
-        
+
         // Should not refresh when interval is 0
         app.config.general.refresh_enabled = true;
         app.config.general.auto_refresh_interval = 0;
         assert!(!app.should_auto_refresh());
-        
+
         // Should refresh when enabled and never refreshed before
         app.config.general.refresh_enabled = true;
         app.config.general.auto_refresh_interval = 300;
         app.last_refresh = None;
         assert!(app.should_auto_refresh());
-        
+
         // Should not refresh when in progress
         app.refresh_in_progress = true;
         assert!(!app.should_auto_refresh());
