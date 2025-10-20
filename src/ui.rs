@@ -606,13 +606,13 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         .iter()
         .enumerate()
         .map(|(idx, &(feed_idx, item_idx))| {
-            let (feed, item) = if app.is_searching {
+             let (feed, item) = if app.is_searching {
                 app.search_item(idx).unwrap()
             } else {
-                app.dashboard_item(idx).unwrap()
+                (&app.feeds[feed_idx], &app.feeds[feed_idx].items[item_idx])
             };
 
-            let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
+        let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
             let is_selected = app.selected_item == Some(idx);
             let is_read = app.is_item_read(feed_idx, item_idx);
 

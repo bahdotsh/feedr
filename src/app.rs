@@ -298,10 +298,15 @@ impl App {
         };
 
         // Check category filter
-        if let Some(category) = &self.filter_options.category {
-            // Use feed URL to infer category
-            let feed_domain = extract_domain(&feed.url);
-            if !feed_domain.contains(category) {
+        if let Some(filter_category_name) = &self.filter_options.category {
+            let category_match = self.categories.iter()
+                .find(|cat| &cat.name == filter_category_name);
+            let is_in_category = if let Some(category) = category_match {
+                category.contains_feed(&feed.url)
+            } else {
+                false
+            };
+            if !is_in_category {
                 return false;
             }
         }

@@ -756,13 +756,23 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     // Toggle category filter
                     if app.filter_options.category.is_none() {
                         // Cycle through available categories (tech, news, etc.)
-                        app.filter_options.category = Some("tech".to_string());
-                    } else if app.filter_options.category.as_deref() == Some("tech") {
-                        app.filter_options.category = Some("news".to_string());
-                    } else if app.filter_options.category.as_deref() == Some("news") {
-                        app.filter_options.category = Some("science".to_string());
+                        app.filter_options.category = Some(app.categories[0].name.clone());
                     } else {
-                        app.filter_options.category = None;
+                        // Find current index and move to next
+                        let current = app.filter_options.category.as_ref().unwrap();
+                        let current_idx = app.categories.iter().position(|c| &c.name == current);
+                            if let Some(idx) = current_idx {
+                                    if idx < app.categories.len() - 1 {
+                                    // Move to next category
+                                    app.filter_options.category = Some(app.categories[idx + 1].name.clone());
+                                } else {
+                                    // Wrap around to None
+                                    app.filter_options.category = None;
+                                }
+                            } else {
+                                // Current category not found, set to first
+                                app.filter_options.category = Some(app.categories[0].name.clone());
+                            }
                     }
                     app.apply_filters();
                 }
