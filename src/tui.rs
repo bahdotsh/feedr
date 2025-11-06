@@ -653,7 +653,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 }
                             }
                         }
-                        KeyCode::Up => {
+                        KeyCode::Up | KeyCode::Char('k') => {
                             // Select previous category
                             if let Some(selected) = app.selected_category {
                                 if selected > 0 {
@@ -663,7 +663,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 app.selected_category = Some(0);
                             }
                         }
-                        KeyCode::Down => {
+                        KeyCode::Down | KeyCode::Char('j') => {
                             // Select next category
                             if let Some(selected) = app.selected_category {
                                 if selected < app.categories.len() - 1 {
