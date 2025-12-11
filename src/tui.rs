@@ -103,6 +103,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
         if matches!(key.kind, KeyEventKind::Release) {
             return Ok(false);
         }
+        app.error = None;
         match app.input_mode {
             InputMode::Normal => match app.view {
                 View::Dashboard => match key.code {
