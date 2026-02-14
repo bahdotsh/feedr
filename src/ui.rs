@@ -1500,19 +1500,8 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
         Style::default().fg(colors.text_secondary),
     )]));
 
-    // Add spacer
+    // Add spacers
     lines.push(Line::from(""));
-
-    // Add input field with cursor
-    let input_display = format!("{}█", app.input);
-    lines.push(Line::from(vec![Span::styled(
-        input_display,
-        Style::default()
-            .fg(colors.highlight)
-            .add_modifier(Modifier::BOLD),
-    )]));
-
-    // Add spacer
     lines.push(Line::from(""));
 
     // Add controls help
@@ -1533,7 +1522,8 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
         Span::styled(" to cancel", Style::default().fg(colors.text_secondary)),
     ]));
 
-    let input_paragraph = Paragraph::new(lines).block(
+    // Main modal paragraph (no input text)
+    let modal_paragraph = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(colors.border_focus_type)
@@ -1541,8 +1531,23 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
             .style(Style::default().bg(colors.surface))
             .padding(Padding::new(3, 3, 2, 2)),
     );
+    f.render_widget(modal_paragraph, area);
 
-    f.render_widget(input_paragraph, area);
+    let input_paragraph = Paragraph::new(app.input.as_str())
+        .block(Block::default().borders(Borders::NONE))
+        .style(
+            Style::default()
+                .fg(colors.highlight)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    let input_rect = Rect::new(area.x + 4, area.y + 7, area.width.saturating_sub(8), 1);
+
+    f.render_widget(input_paragraph, input_rect);
+
+    if matches!(app.input_mode, InputMode::InsertUrl) {
+        f.set_cursor(input_rect.x + app.input.len() as u16, input_rect.y);
+    }
 }
 
 fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
