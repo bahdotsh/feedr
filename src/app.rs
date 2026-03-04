@@ -93,6 +93,7 @@ pub struct App {
     pub detail_max_scroll: u16,      // Maximum scroll value for current content
     pub last_refresh: Option<Instant>, // Track when last refresh occurred
     pub refresh_in_progress: bool,   // Prevent concurrent refreshes
+    pub refresh_requested: bool,     // Signal to main loop to start a non-blocking refresh
     pub last_domain_fetch: HashMap<String, Instant>, // Track last fetch time per domain for rate limiting
     pub color_scheme: ColorScheme, // Cached color scheme to avoid per-frame construction
     pub last_session_time: Option<DateTime<Utc>>, // When the previous session started
@@ -180,6 +181,7 @@ impl App {
             detail_max_scroll: 0,
             last_refresh: None,
             refresh_in_progress: false,
+            refresh_requested: false,
             last_domain_fetch: HashMap::new(),
             color_scheme,
             last_session_time,

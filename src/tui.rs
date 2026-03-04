@@ -44,14 +44,13 @@ pub fn run(mut app: App) -> Result<()> {
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
-    let mut last_tick = std::time::Instant::now();
-    let tick_rate = Duration::from_millis(app.config.ui.tick_rate);
-    let error_timeout = Duration::from_millis(app.config.ui.error_display_timeout);
-
-    // Spawn background threads to load bookmarked feeds
-    let mut pending_count: usize = 0;
+/// Spawn background threads to fetch all bookmarked feeds, sending results through the channel.
+/// Returns the sender's pending count and the receiver.
+fn spawn_feed_refresh(
+    app: &mut App,
+) -> (usize, mpsc::Receiver<(usize, Result<Feed>)>) {
     let (feed_tx, feed_rx) = mpsc::channel::<(usize, Result<Feed>)>();
+    let mut pending_count: usize = 0;
 
     if !app.bookmarks.is_empty() {
         let timeout = app.config.network.http_timeout;
@@ -59,6 +58,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 
         if let Ok(client) = Feed::build_client(timeout) {
             pending_count = app.bookmarks.len();
+            app.is_loading = true;
+            app.refresh_in_progress = true;
             for (idx, url) in app.bookmarks.iter().enumerate() {
                 let client = client.clone();
                 let url = url.clone();
@@ -69,15 +70,34 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     let _ = tx.send((idx, result));
                 });
             }
-        } else {
-            app.is_loading = false;
         }
     }
-    // Drop our copy so the channel closes when all threads finish
-    drop(feed_tx);
+
+    (pending_count, feed_rx)
+}
+
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+    let mut last_tick = std::time::Instant::now();
+    let tick_rate = Duration::from_millis(app.config.ui.tick_rate);
+    let error_timeout = Duration::from_millis(app.config.ui.error_display_timeout);
+
+    // Initial load of bookmarked feeds
+    let (mut pending_count, mut feed_rx) = spawn_feed_refresh(app);
 
     loop {
         terminal.draw(|f| ui::render(f, app))?;
+
+        // Check if a refresh was requested (by 'r' key or auto-refresh)
+        if app.refresh_requested {
+            app.refresh_requested = false;
+            if !app.refresh_in_progress {
+                app.feeds.clear();
+                app.update_dashboard();
+                let (count, rx) = spawn_feed_refresh(app);
+                pending_count = count;
+                feed_rx = rx;
+            }
+        }
 
         // Drain any feeds that arrived from background threads
         if pending_count > 0 {
@@ -102,6 +122,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                 pending_count -= 1;
                 if pending_count == 0 {
                     app.is_loading = false;
+                    app.refresh_in_progress = false;
                     app.last_refresh = Some(std::time::Instant::now());
                     app.update_dashboard();
                     // Show summary view if there are new items since last session
@@ -156,9 +177,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 
             // Check if auto-refresh should trigger
             if app.should_auto_refresh() {
-                // Note: refresh_feeds() is synchronous and will block,
-                // but it updates the loading state for visual feedback
-                let _ = app.refresh_feeds();
+                app.refresh_requested = true;
             }
 
             last_tick = std::time::Instant::now();
@@ -246,15 +265,9 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.input_mode = InputMode::InsertUrl;
                     }
                     KeyCode::Char('r') => {
-                        // Set loading flag before starting refresh
-                        app.is_loading = true;
-
-                        if let Err(e) = app.refresh_feeds() {
-                            app.error = Some(format!("Failed to refresh feeds: {}", e));
+                        if !app.refresh_in_progress {
+                            app.refresh_requested = true;
                         }
-
-                        // Refresh completed
-                        app.is_loading = false;
                     }
                     KeyCode::Char('t') => {
                         // Toggle theme
@@ -423,15 +436,9 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.input_mode = InputMode::SearchMode;
                     }
                     KeyCode::Char('r') => {
-                        // Set loading flag before starting refresh
-                        app.is_loading = true;
-
-                        if let Err(e) = app.refresh_feeds() {
-                            app.error = Some(format!("Failed to refresh feeds: {}", e));
+                        if !app.refresh_in_progress {
+                            app.refresh_requested = true;
                         }
-
-                        // Refresh completed
-                        app.is_loading = false;
                     }
                     KeyCode::Char('t') => {
                         // Toggle theme
@@ -506,15 +513,9 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.input_mode = InputMode::SearchMode;
                     }
                     KeyCode::Char('r') => {
-                        // Set loading flag before starting refresh
-                        app.is_loading = true;
-
-                        if let Err(e) = app.refresh_feeds() {
-                            app.error = Some(format!("Failed to refresh feeds: {}", e));
+                        if !app.refresh_in_progress {
+                            app.refresh_requested = true;
                         }
-
-                        // Refresh completed
-                        app.is_loading = false;
                     }
                     KeyCode::Char('t') => {
                         // Toggle theme
@@ -642,15 +643,9 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.detail_vertical_scroll = app.detail_max_scroll;
                     }
                     KeyCode::Char('r') => {
-                        // Set loading flag before starting refresh
-                        app.is_loading = true;
-
-                        if let Err(e) = app.refresh_feeds() {
-                            app.error = Some(format!("Failed to refresh feeds: {}", e));
+                        if !app.refresh_in_progress {
+                            app.refresh_requested = true;
                         }
-
-                        // Refresh completed
-                        app.is_loading = false;
                     }
                     KeyCode::Char('o') => {
                         if let Err(e) = app.open_current_item_in_browser() {
