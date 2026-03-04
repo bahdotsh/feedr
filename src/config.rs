@@ -55,17 +55,12 @@ pub struct UiConfig {
     pub theme: Theme,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
     Light,
+    #[default]
     Dark,
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self::Dark
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

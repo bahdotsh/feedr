@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::feed::{Feed, FeedCategory, FeedItem};
-use crate::ui::extract_domain;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -298,10 +297,12 @@ impl App {
         };
 
         // Check category filter
-        if let Some(category) = &self.filter_options.category {
-            // Use feed URL to infer category
-            let feed_domain = extract_domain(&feed.url);
-            if !feed_domain.contains(category) {
+        if let Some(category_name) = &self.filter_options.category {
+            let feed_in_category = self
+                .categories
+                .iter()
+                .any(|c| c.name == *category_name && c.contains_feed(&feed.url));
+            if !feed_in_category {
                 return false;
             }
         }
@@ -672,44 +673,7 @@ impl App {
     }
 
     pub fn get_available_categories(&self) -> Vec<String> {
-        // Extract potential categories from feed domains
-        let mut categories = std::collections::HashSet::new();
-
-        for feed in &self.feeds {
-            let domain = extract_domain(&feed.url);
-
-            // Try to extract a category from the domain
-            if domain.contains("news") || domain.contains("nytimes") || domain.contains("cnn") {
-                categories.insert("news".to_string());
-            } else if domain.contains("tech")
-                || domain.contains("wired")
-                || domain.contains("ycombinator")
-            {
-                categories.insert("tech".to_string());
-            } else if domain.contains("science")
-                || domain.contains("nature")
-                || domain.contains("scientific")
-            {
-                categories.insert("science".to_string());
-            } else if domain.contains("finance")
-                || domain.contains("money")
-                || domain.contains("business")
-            {
-                categories.insert("finance".to_string());
-            } else if domain.contains("sport")
-                || domain.contains("espn")
-                || domain.contains("athletic")
-            {
-                categories.insert("sports".to_string());
-            } else {
-                // Use the first part of the domain as a fallback category
-                if let Some(first_part) = domain.split('.').next() {
-                    categories.insert(first_part.to_string());
-                }
-            }
-        }
-
-        let mut result: Vec<String> = categories.into_iter().collect();
+        let mut result: Vec<String> = self.categories.iter().map(|c| c.name.clone()).collect();
         result.sort();
         result
     }
