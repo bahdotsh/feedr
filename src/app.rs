@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::feed::{Feed, FeedCategory, FeedItem};
 use crate::ui::ColorScheme;
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -59,6 +60,7 @@ pub enum View {
     FeedItems,
     FeedItemDetail,
     CategoryManagement,
+    Summary,
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +95,8 @@ pub struct App {
     pub refresh_in_progress: bool,   // Prevent concurrent refreshes
     pub last_domain_fetch: HashMap<String, Instant>, // Track last fetch time per domain for rate limiting
     pub color_scheme: ColorScheme, // Cached color scheme to avoid per-frame construction
+    pub last_session_time: Option<DateTime<Utc>>, // When the previous session started
+    pub show_summary: bool,        // Whether to show summary after feeds load
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +111,8 @@ struct SavedData {
     bookmarks: Vec<String>,
     categories: Vec<FeedCategory>,
     read_items: HashSet<String>,
+    #[serde(default)]
+    last_session_time: Option<String>,
 }
 
 impl Default for App {
@@ -127,10 +133,20 @@ impl App {
             bookmarks: vec![],
             categories: vec![],
             read_items: HashSet::new(),
+            last_session_time: None,
         });
 
         let has_bookmarks = !saved_data.bookmarks.is_empty();
         let color_scheme = ColorScheme::from_theme(&config.ui.theme);
+
+        // Parse last session time from saved data
+        let last_session_time = saved_data
+            .last_session_time
+            .as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        let show_summary = last_session_time.is_some() && has_bookmarks;
 
         let mut app = Self {
             config,
@@ -163,9 +179,14 @@ impl App {
             refresh_in_progress: false,
             last_domain_fetch: HashMap::new(),
             color_scheme,
+            last_session_time,
+            show_summary,
         };
 
         app.update_dashboard();
+
+        // Save current time as the new session time
+        app.save_session_time();
 
         app
     }
@@ -211,6 +232,7 @@ impl App {
                 bookmarks: Vec::new(),
                 categories: Vec::new(),
                 read_items: HashSet::new(),
+                last_session_time: None,
             });
         }
 
@@ -229,11 +251,17 @@ impl App {
             bookmarks: self.bookmarks.clone(),
             categories: self.categories.clone(),
             read_items: self.read_items.clone(),
+            last_session_time: Some(Utc::now().to_rfc3339()),
         };
 
         let json = serde_json::to_string(&saved_data)?;
         fs::write(path, json)?;
         Ok(())
+    }
+
+    fn save_session_time(&self) {
+        // Save just the session time without altering other data
+        let _ = self.save_data();
     }
 
     /// Get the data file path with XDG support and backwards compatibility
@@ -1011,6 +1039,46 @@ impl App {
         } else {
             std::time::Duration::from_secs(0)
         }
+    }
+
+    /// Get new items since last session, returns (feed_idx, item_idx, feed_title)
+    pub fn get_new_items_since_session(&self) -> Vec<(usize, usize, &str)> {
+        let session_time = match self.last_session_time {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let mut items = Vec::new();
+        for (feed_idx, feed) in self.feeds.iter().enumerate() {
+            for (item_idx, item) in feed.items.iter().enumerate() {
+                if let Some(parsed_date) = item.parsed_date {
+                    if parsed_date > session_time {
+                        items.push((feed_idx, item_idx, feed.title.as_str()));
+                    }
+                }
+            }
+        }
+        items
+    }
+
+    /// Get summary stats for the "What's New" view
+    pub fn get_summary_stats(&self) -> (usize, Vec<(String, usize)>) {
+        let new_items = self.get_new_items_since_session();
+        let total = new_items.len();
+
+        // Count items per feed
+        let mut feed_counts: HashMap<&str, usize> = HashMap::new();
+        for &(_, _, feed_title) in &new_items {
+            *feed_counts.entry(feed_title).or_insert(0) += 1;
+        }
+
+        let mut feeds_with_counts: Vec<(String, usize)> = feed_counts
+            .into_iter()
+            .map(|(name, count)| (name.to_string(), count))
+            .collect();
+        feeds_with_counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+        (total, feeds_with_counts)
     }
 
     /// Toggle between light and dark themes

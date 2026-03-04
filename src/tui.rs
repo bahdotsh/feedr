@@ -104,6 +104,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     app.is_loading = false;
                     app.last_refresh = Some(std::time::Instant::now());
                     app.update_dashboard();
+                    // Show summary view if there are new items since last session
+                    if app.show_summary {
+                        app.show_summary = false;
+                        let (total, _) = app.get_summary_stats();
+                        if total > 0 {
+                            app.view = View::Summary;
+                        }
+                    }
                 }
             }
         }
@@ -655,6 +663,14 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         }
                     }
                     _ => {}
+                },
+                View::Summary => match key.code {
+                    KeyCode::Char('q') => return Ok(true),
+                    _ => {
+                        // Any key dismisses the summary
+                        app.view = View::Dashboard;
+                        app.selected_item = Some(0);
+                    }
                 },
                 View::CategoryManagement => {
                     match key.code {
