@@ -88,11 +88,11 @@ pub struct App {
     pub filtered_dashboard_items: Vec<(usize, usize)>, // Filtered items for dashboard
     pub category_action: Option<CategoryAction>, // For category management
     pub detail_vertical_scroll: u16, // Vertical scroll value for item detail view
-    pub detail_max_scroll: u16,  // Maximum scroll value for current content
+    pub detail_max_scroll: u16,      // Maximum scroll value for current content
     pub last_refresh: Option<Instant>, // Track when last refresh occurred
-    pub refresh_in_progress: bool, // Prevent concurrent refreshes
+    pub refresh_in_progress: bool,   // Prevent concurrent refreshes
     pub last_domain_fetch: HashMap<String, Instant>, // Track last fetch time per domain for rate limiting
-    pub color_scheme: ColorScheme,                   // Cached color scheme to avoid per-frame construction
+    pub color_scheme: ColorScheme, // Cached color scheme to avoid per-frame construction
 }
 
 #[derive(Clone, Debug)]
@@ -299,7 +299,8 @@ impl App {
         if !self.filter_options.is_active() {
             // No filters active, so filtered items are the same as dashboard items
             // Use clone_from to reuse existing allocation
-            self.filtered_dashboard_items.clone_from(&self.dashboard_items);
+            self.filtered_dashboard_items
+                .clone_from(&self.dashboard_items);
             return;
         }
 
@@ -614,9 +615,10 @@ impl App {
                 // Check individual items using pre-lowercased title and cached plain_text
                 for (item_idx, item) in feed.items.iter().enumerate() {
                     if item.title_lower.contains(&self.search_query)
-                        || item.plain_text.as_ref().is_some_and(|pt| {
-                            pt.to_lowercase().contains(&self.search_query)
-                        })
+                        || item
+                            .plain_text
+                            .as_ref()
+                            .is_some_and(|pt| pt.to_lowercase().contains(&self.search_query))
                     {
                         self.filtered_items.push((feed_idx, item_idx));
                     }
