@@ -46,9 +46,7 @@ pub fn run(mut app: App) -> Result<()> {
 
 /// Spawn background threads to fetch all bookmarked feeds, sending results through the channel.
 /// Returns the sender's pending count and the receiver.
-fn spawn_feed_refresh(
-    app: &mut App,
-) -> (usize, mpsc::Receiver<(usize, Result<Feed>)>) {
+fn spawn_feed_refresh(app: &mut App) -> (usize, mpsc::Receiver<(usize, Result<Feed>)>) {
     let (feed_tx, feed_rx) = mpsc::channel::<(usize, Result<Feed>)>();
     let mut pending_count: usize = 0;
 
