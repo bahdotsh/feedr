@@ -1316,7 +1316,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
             Style::default().fg(colors.highlight),
         ),
         InputMode::SearchMode => (
-            "Enter search term (press ENTER to search)",
+            "Type to search (results update live) | ENTER: keep results | ESC: cancel",
             Style::default().fg(colors.highlight),
         ),
         InputMode::FilterMode => ("", Style::default().fg(colors.muted)),
@@ -1468,15 +1468,21 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
         };
         (
             "Add Feed URL",
-            "Enter the RSS feed URL and press Enter",
+            "Enter the RSS feed URL and press Enter".to_string(),
             link_icon,
         )
     } else {
-        (
-            "Search",
-            "Enter search terms and press Enter",
-            colors.get_icon_search(),
-        )
+        let result_count = app.filtered_items.len();
+        let search_help = if app.input.is_empty() {
+            "Type to search - results update live".to_string()
+        } else {
+            format!(
+                "{} result{} found",
+                result_count,
+                if result_count == 1 { "" } else { "s" }
+            )
+        };
+        ("Search", search_help, colors.get_icon_search())
     };
 
     // Create a modern input modal
@@ -1495,7 +1501,7 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
 
     // Add help text
     lines.push(Line::from(vec![Span::styled(
-        help_text,
+        help_text.clone(),
         Style::default().fg(colors.text_secondary),
     )]));
 

@@ -596,6 +596,12 @@ impl App {
         Ok(())
     }
 
+    pub fn live_search(&mut self, query: &str) {
+        self.search_feeds(query);
+        self.view = View::Dashboard;
+        self.selected_item = Some(0);
+    }
+
     pub fn search_feeds(&mut self, query: &str) {
         self.search_query = query.to_lowercase();
         self.is_searching = !query.is_empty();

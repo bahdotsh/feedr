@@ -790,10 +790,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
             },
             InputMode::SearchMode => match key.code {
                 KeyCode::Enter => {
-                    let query = app.input.trim().to_string();
-                    app.search_feeds(&query);
-                    app.selected_item = Some(0);
-                    app.view = View::Dashboard; // Show search results in dashboard
+                    // Results already shown live; just exit search input mode
                     app.input_mode = InputMode::Normal;
                 }
                 KeyCode::Esc => {
@@ -803,9 +800,13 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 }
                 KeyCode::Char(c) => {
                     app.input.push(c);
+                    let query = app.input.clone();
+                    app.live_search(&query);
                 }
                 KeyCode::Backspace => {
                     app.input.pop();
+                    let query = app.input.clone();
+                    app.live_search(&query);
                 }
                 _ => {}
             },
