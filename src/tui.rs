@@ -112,6 +112,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                             app.view = View::Summary;
                         }
                     }
+                    // Save current time as session time now that feeds are loaded
+                    let _ = app.save_data();
                 }
             }
         }

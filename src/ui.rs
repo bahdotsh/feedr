@@ -399,14 +399,19 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
         title = format!("{} | {} Filtered", title, search_icon);
     }
 
-    // Use the filtered items when filters are active
-    // Clone to owned Vec to allow mutable borrow of app for preview pane
-    let items_to_display: Vec<(usize, usize)> = if app.is_searching {
-        app.filtered_items.clone()
+    // Determine which item list to use — borrow as a slice to avoid cloning
+    let items_to_display: &[(usize, usize)] = if app.is_searching {
+        &app.filtered_items
     } else if app.filter_options.is_active() {
-        app.filtered_dashboard_items.clone()
+        &app.filtered_dashboard_items
     } else {
-        app.dashboard_items.clone()
+        &app.dashboard_items
+    };
+    // Copy the indices we need for the preview pane before borrowing app mutably
+    let preview_indices: Vec<(usize, usize)> = if app.preview_pane {
+        items_to_display.to_vec()
+    } else {
+        Vec::new()
     };
 
     if items_to_display.is_empty() {
@@ -730,7 +735,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
 
     // Render preview pane
     if let Some(preview_area) = preview_area {
-        render_preview_pane(f, app, preview_area, &items_to_display, colors);
+        render_preview_pane(f, app, preview_area, &preview_indices, colors);
     }
 }
 
@@ -843,11 +848,27 @@ fn render_preview_pane<B: Backend>(
         .saturating_sub(2) // borders
         .saturating_sub(2); // padding
 
-    let content_lines = lines.len() as u16;
-    app.preview_max_scroll = content_lines.saturating_sub(viewport_height);
-    if app.preview_scroll > app.preview_max_scroll {
-        app.preview_scroll = app.preview_max_scroll;
-    }
+    // Account for line wrapping when calculating content height
+    let content_width = area
+        .width
+        .saturating_sub(2) // borders
+        .saturating_sub(4) // padding (2 left + 2 right)
+        as usize;
+    let content_text: String = lines
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content_lines = count_wrapped_lines(&content_text, content_width);
+
+    // Compute scroll locally to avoid mutable borrow while lines borrows app
+    let preview_max_scroll = content_lines.saturating_sub(viewport_height);
+    let preview_scroll = app.preview_scroll.min(preview_max_scroll);
 
     let preview = Paragraph::new(lines)
         .block(
@@ -860,10 +881,15 @@ fn render_preview_pane<B: Backend>(
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(2, 2, 1, 1)),
         )
-        .scroll((app.preview_scroll, 0))
+        .scroll((preview_scroll, 0))
         .wrap(Wrap { trim: true });
 
+    // Render consumes the Paragraph, releasing borrows into app
     f.render_widget(preview, area);
+
+    // Now safe to update app scroll state
+    app.preview_max_scroll = preview_max_scroll;
+    app.preview_scroll = preview_scroll;
 }
 
 fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
