@@ -31,6 +31,14 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 cargo install feedr
 ```
 
+### Arch Linux (AUR)
+Feedr is available on the [AUR](https://aur.archlinux.org/packages/feedr). Install it using your preferred AUR helper:
+```bash
+paru -S feedr
+# or
+yay -S feedr
+```
+
 ### Build from Source
 ```bash
 git clone https://github.com/bahdotsh/feedr.git
