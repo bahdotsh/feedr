@@ -11,11 +11,12 @@ use std::time::Instant;
 
 #[derive(Clone, Debug, Default)]
 pub struct FilterOptions {
-    pub category: Option<String>,  // Filter by feed category
-    pub age: Option<TimeFilter>,   // Filter by content age
-    pub has_author: Option<bool>,  // Filter for items with/without author
-    pub read_status: Option<bool>, // Filter for read/unread items
-    pub min_length: Option<usize>, // Filter by content length
+    pub category: Option<String>,   // Filter by feed category
+    pub age: Option<TimeFilter>,    // Filter by content age
+    pub has_author: Option<bool>,   // Filter for items with/without author
+    pub read_status: Option<bool>,  // Filter for read/unread items
+    pub min_length: Option<usize>,  // Filter by content length
+    pub starred_only: Option<bool>, // Filter for starred/unstarred items
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +38,7 @@ impl FilterOptions {
             || self.has_author.is_some()
             || self.read_status.is_some()
             || self.min_length.is_some()
+            || self.starred_only.is_some()
     }
 
     pub fn reset(&mut self) {
@@ -61,6 +63,7 @@ pub enum View {
     FeedItemDetail,
     CategoryManagement,
     Summary,
+    Starred,
 }
 
 #[derive(Clone, Debug)]
@@ -87,6 +90,7 @@ pub struct App {
     pub filter_options: FilterOptions,
     pub filter_mode: bool,           // Whether we're in filter selection mode
     pub read_items: HashSet<String>, // Track read item IDs
+    pub starred_items: HashSet<String>, // Track starred item IDs
     pub filtered_dashboard_items: Vec<(usize, usize)>, // Filtered items for dashboard
     pub category_action: Option<CategoryAction>, // For category management
     pub detail_vertical_scroll: u16, // Vertical scroll value for item detail view
@@ -116,6 +120,8 @@ struct SavedData {
     categories: Vec<FeedCategory>,
     read_items: HashSet<String>,
     #[serde(default)]
+    starred_items: HashSet<String>,
+    #[serde(default)]
     last_session_time: Option<String>,
 }
 
@@ -137,6 +143,7 @@ impl App {
             bookmarks: vec![],
             categories: vec![],
             read_items: HashSet::new(),
+            starred_items: HashSet::new(),
             last_session_time: None,
         });
 
@@ -175,6 +182,7 @@ impl App {
             filter_options: FilterOptions::new(),
             filter_mode: false,
             read_items: saved_data.read_items,
+            starred_items: saved_data.starred_items,
             filtered_dashboard_items: Vec::new(),
             category_action: None,
             detail_vertical_scroll: 0,
@@ -237,6 +245,7 @@ impl App {
                 bookmarks: Vec::new(),
                 categories: Vec::new(),
                 read_items: HashSet::new(),
+                starred_items: HashSet::new(),
                 last_session_time: None,
             });
         }
@@ -256,6 +265,7 @@ impl App {
             bookmarks: self.bookmarks.clone(),
             categories: self.categories.clone(),
             read_items: self.read_items.clone(),
+            starred_items: self.starred_items.clone(),
             last_session_time: Some(Utc::now().to_rfc3339()),
         };
 
@@ -414,6 +424,15 @@ impl App {
             }
         }
 
+        // Check starred status filter
+        if let Some(is_starred) = self.filter_options.starred_only {
+            let item_id = self.get_item_id(feed_idx, item_idx);
+            let item_is_starred = self.starred_items.contains(&item_id);
+            if is_starred != item_is_starred {
+                return false;
+            }
+        }
+
         // Check content length filter using cached plain_text (avoids HTML parsing)
         if let Some(min_length) = self.filter_options.min_length {
             if let Some(plain_text) = &item.plain_text {
@@ -475,6 +494,39 @@ impl App {
     pub fn is_item_read(&self, feed_idx: usize, item_idx: usize) -> bool {
         let item_id = self.get_item_id(feed_idx, item_idx);
         self.read_items.contains(&item_id)
+    }
+
+    // Toggle an item's starred status and return whether it's now starred
+    pub fn toggle_item_starred(&mut self, feed_idx: usize, item_idx: usize) -> Result<bool> {
+        let item_id = self.get_item_id(feed_idx, item_idx);
+        if !item_id.is_empty() {
+            let is_now_starred = if self.starred_items.contains(&item_id) {
+                self.starred_items.remove(&item_id);
+                false
+            } else {
+                self.starred_items.insert(item_id);
+                true
+            };
+            self.save_data()?;
+            Ok(is_now_starred)
+        } else {
+            Ok(false)
+        }
+    }
+
+    // Check if an item is starred
+    pub fn is_item_starred(&self, feed_idx: usize, item_idx: usize) -> bool {
+        let item_id = self.get_item_id(feed_idx, item_idx);
+        self.starred_items.contains(&item_id)
+    }
+
+    // Get starred items from dashboard_items for the Starred view
+    pub fn get_starred_dashboard_items(&self) -> Vec<(usize, usize)> {
+        self.dashboard_items
+            .iter()
+            .filter(|&&(feed_idx, item_idx)| self.is_item_starred(feed_idx, item_idx))
+            .cloned()
+            .collect()
     }
 
     pub fn update_dashboard(&mut self) {
@@ -786,6 +838,7 @@ impl App {
             self.filter_options.has_author.is_some(),
             self.filter_options.read_status.is_some(),
             self.filter_options.min_length.is_some(),
+            self.filter_options.starred_only.is_some(),
         ]
         .iter()
         .filter(|&&x| x)
@@ -849,6 +902,13 @@ impl App {
                 _ => "Custom",
             };
             parts.push(format!("Length: {}", length_str));
+        }
+
+        if let Some(is_starred) = self.filter_options.starred_only {
+            parts.push(format!(
+                "Starred: {}",
+                if is_starred { "Yes" } else { "No" }
+            ));
         }
 
         if parts.is_empty() {
