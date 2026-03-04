@@ -753,17 +753,18 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     app.input_mode = InputMode::Normal;
                 }
                 KeyCode::Char('c') => {
-                    // Toggle category filter
-                    if app.filter_options.category.is_none() {
-                        // Cycle through available categories (tech, news, etc.)
-                        app.filter_options.category = Some("tech".to_string());
-                    } else if app.filter_options.category.as_deref() == Some("tech") {
-                        app.filter_options.category = Some("news".to_string());
-                    } else if app.filter_options.category.as_deref() == Some("news") {
-                        app.filter_options.category = Some("science".to_string());
+                    let categories = app.get_available_categories();
+                    app.filter_options.category = if categories.is_empty() {
+                        None
                     } else {
-                        app.filter_options.category = None;
-                    }
+                        match &app.filter_options.category {
+                            None => Some(categories[0].clone()),
+                            Some(current) => categories
+                                .iter()
+                                .position(|c| c == current)
+                                .and_then(|idx| categories.get(idx + 1).cloned()),
+                        }
+                    };
                     app.apply_filters();
                 }
                 KeyCode::Char('t') => {
