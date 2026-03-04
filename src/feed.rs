@@ -11,6 +11,8 @@ pub struct Feed {
     pub url: String,
     pub title: String,
     pub items: Vec<FeedItem>,
+    #[serde(skip)]
+    pub title_lower: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -21,6 +23,12 @@ pub struct FeedItem {
     pub pub_date: Option<String>,
     pub author: Option<String>,
     pub formatted_date: Option<String>,
+    #[serde(skip)]
+    pub parsed_date: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    pub plain_text: Option<String>,
+    #[serde(skip)]
+    pub title_lower: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -169,13 +177,17 @@ impl Feed {
 
         let items = feed.entries.iter().map(FeedItem::from_feed_entry).collect();
 
+        let title = feed
+            .title
+            .map(|t| t.content)
+            .unwrap_or_else(|| "Untitled Feed".to_string());
+        let title_lower = title.to_lowercase();
+
         Ok(Feed {
             url: url.to_string(),
-            title: feed
-                .title
-                .map(|t| t.content)
-                .unwrap_or_else(|| "Untitled Feed".to_string()),
+            title,
             items,
+            title_lower,
         })
     }
 }
@@ -183,17 +195,18 @@ impl Feed {
 impl FeedItem {
     fn from_feed_entry(entry: &feed_rs::model::Entry) -> Self {
         // Extract publication date - try multiple date formats
-        let (pub_date_string, formatted_date) = if let Some(published) = &entry.published {
-            let pub_string = published.to_rfc3339();
-            let formatted = format_date(*published);
-            (Some(pub_string), Some(formatted))
-        } else if let Some(updated) = &entry.updated {
-            let pub_string = updated.to_rfc3339();
-            let formatted = format_date(*updated);
-            (Some(pub_string), Some(formatted))
-        } else {
-            (None, None)
-        };
+        let (pub_date_string, formatted_date, parsed_date) =
+            if let Some(published) = &entry.published {
+                let pub_string = published.to_rfc3339();
+                let formatted = format_date(*published);
+                (Some(pub_string), Some(formatted), Some(*published))
+            } else if let Some(updated) = &entry.updated {
+                let pub_string = updated.to_rfc3339();
+                let formatted = format_date(*updated);
+                (Some(pub_string), Some(formatted), Some(*updated))
+            } else {
+                (None, None, None)
+            };
 
         // Extract author information
         let author = entry.authors.first().map(|author| {
@@ -216,20 +229,31 @@ impl FeedItem {
                 .map(|summary| summary.content.clone())
         };
 
+        // Cache plain text from description (avoids repeated HTML parsing)
+        let plain_text = description
+            .as_ref()
+            .map(|desc| html2text::from_read(desc.as_bytes(), 80));
+
         // Extract the primary link
         let link = entry.links.first().map(|link| link.href.clone());
 
+        let title = entry
+            .title
+            .as_ref()
+            .map(|t| t.content.clone())
+            .unwrap_or_else(|| "Untitled".to_string());
+        let title_lower = title.to_lowercase();
+
         FeedItem {
-            title: entry
-                .title
-                .as_ref()
-                .map(|t| t.content.clone())
-                .unwrap_or_else(|| "Untitled".to_string()),
+            title,
             link,
             description,
             pub_date: pub_date_string,
             author,
             formatted_date,
+            parsed_date,
+            plain_text,
+            title_lower,
         }
     }
 }
