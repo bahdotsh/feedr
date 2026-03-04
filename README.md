@@ -10,14 +10,23 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 
 ## Features
 
-- **Dashboard View**: See the latest articles across all your feeds
-- **Feed Management**: Subscribe to and organize multiple RSS feeds
-- **Rich Content Display**: Beautiful formatting of articles with HTML-to-text conversion
-- **Smart Search**: Quickly find content across all your feeds
+- **Dashboard View**: See the latest articles across all your feeds, sorted chronologically
+- **Feed Management**: Subscribe to and organize multiple RSS/Atom feeds
+- **Starred Articles**: Save articles for later with a dedicated starred view
+- **Categories**: Organize feeds into custom categories with create, rename, and delete support
+- **Advanced Filtering**: Filter articles by category, age, author, read status, starred status, and content length
+- **Dual Themes**: Switch between a dark cyberpunk theme and a light zen theme with `t`
+- **Live Search**: Instantly search across all feed titles and article content
+- **Summary View**: "What's New" screen shows articles added since your last session with per-feed stats
+- **Read/Unread Tracking**: Persistent read state tracking across sessions
+- **Article Preview**: Toggle an inline preview pane in the feed items view
+- **OPML Import**: Bulk import feeds from OPML files via `feedr --import <file.opml>`
 - **Browser Integration**: Open articles in your default browser
 - **Background Refresh**: Automatic feed updates with configurable intervals and smart rate limiting
-- **Rate Limiting**: Prevents "too many requests" errors with per-domain request throttling (ideal for Reddit feeds)
-- **Configurable**: Customize timeouts, UI behavior, and default feeds via TOML config file
+- **Rate Limiting**: Per-domain request throttling prevents "too many requests" errors (ideal for Reddit feeds)
+- **Vim-Style Navigation**: Use `j`/`k` alongside arrow keys for navigation
+- **Rich Content Display**: HTML-to-text conversion with clean article formatting
+- **Configurable**: Customize timeouts, themes, UI behavior, and default feeds via TOML config
 - **XDG Compliant**: Follows standard directory specifications for configuration and data storage
 
 ## Installation
@@ -56,55 +65,97 @@ Run the application:
 feedr
 ```
 
+### OPML Import
+
+Import feeds from an OPML file:
+```bash
+feedr --import feeds.opml
+```
+
 ### Quick Start
 1. When you open Feedr for the first time, press `a` to add a feed
 2. Enter a valid RSS feed URL (e.g., `https://news.ycombinator.com/rss`)
-3. Use arrow keys to navigate and `Enter` to view items
-4. Press `o` to open the current article in your browser
+3. You can also press `1`, `2`, or `3` to quickly add Hacker News, TechCrunch, or BBC News
+4. Use arrow keys (or `j`/`k`) to navigate and `Enter` to view items
+5. Press `o` to open the current article in your browser
+6. Press `t` to toggle between dark and light themes
 
 ### Keyboard Controls
 
 #### General Navigation
 | Key | Action |
 |-----|--------|
-| `Tab` | Cycle between views |
+| `Tab` | Cycle forward through views |
+| `Shift+Tab` | Cycle backward through views |
 | `q` | Quit application |
 | `r` | Refresh all feeds |
+| `t` | Toggle dark/light theme |
 | `/` | Search mode |
 
 #### Dashboard View
 | Key | Action |
 |-----|--------|
-| `f` | Go to feeds list |
-| `a` | Add a new feed |
-| `↑/↓` | Navigate items |
+| `↑/↓` or `k/j` | Navigate items |
 | `Enter` | View selected item |
+| `f` | Filter articles |
+| `c` / `Ctrl+C` | Category management |
+| `a` | Add a new feed |
+| `s` | Toggle starred |
+| `Space` | Toggle read/unread |
+| `p` | Toggle preview pane |
 | `o` | Open link in browser |
+| `1/2/3` | Quick-add demo feeds (HN, TechCrunch, BBC) |
 
 #### Feed List View
 | Key | Action |
 |-----|--------|
 | `h` / `Esc` | Go to dashboard |
+| `↑/↓` or `k/j` | Navigate feeds |
+| `Enter` | View feed items |
 | `a` | Add a new feed |
 | `d` | Delete selected feed |
-| `↑/↓` | Navigate feeds |
-| `Enter` | View feed items |
 
 #### Feed Items View
 | Key | Action |
 |-----|--------|
-| `h` / `Esc` | Back to feeds list |
+| `h` / `Esc` / `Backspace` | Back to feeds list |
 | `Home` | Go to dashboard |
-| `↑/↓` | Navigate items |
+| `↑/↓` or `k/j` | Navigate items |
 | `Enter` | View item details |
+| `s` | Toggle starred |
+| `Space` | Toggle read/unread |
 | `o` | Open item in browser |
 
 #### Item Detail View
 | Key | Action |
 |-----|--------|
-| `h` / `Esc` | Back to feed items |
-| `Home` | Go to dashboard |
+| `h` / `Esc` / `Backspace` | Back to feed items |
+| `↑/↓` or `u/d` | Scroll content |
+| `Page Up` / `Page Down` | Scroll content (page) |
+| `g` | Jump to top |
+| `G` / `End` | Jump to bottom |
+| `s` / `Space` | Toggle starred |
 | `o` | Open item in browser |
+
+#### Categories View
+| Key | Action |
+|-----|--------|
+| `n` | Create new category |
+| `e` | Rename category |
+| `d` | Delete category |
+| `Space` | Expand/collapse category |
+| `h` / `Esc` | Back |
+
+#### Filter Mode (press `f` on Dashboard)
+| Key | Action |
+|-----|--------|
+| `c` | Filter by category |
+| `t` | Filter by time/age |
+| `a` | Filter by author |
+| `r` | Filter by read status |
+| `s` | Filter by starred status |
+| `l` | Filter by content length |
+| `x` | Clear all filters |
 
 ## Configuration
 
@@ -135,6 +186,7 @@ user_agent = "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/f
 [ui]
 tick_rate = 100                # UI update rate in milliseconds
 error_display_timeout = 3000   # Error message duration in milliseconds
+theme = "dark"                 # Theme: "dark" (cyberpunk) or "light" (zen)
 
 # Optional: Define default feeds to load on first run
 [[default_feeds]]
@@ -157,6 +209,7 @@ category = "News"
 #### UI Settings
 - **tick_rate**: How frequently the UI updates in milliseconds (lower = more responsive, higher = less CPU usage)
 - **error_display_timeout**: How long error messages are displayed in milliseconds
+- **theme**: Choose between `"dark"` (cyberpunk aesthetic with neon colors) or `"light"` (zen minimalist with organic colors). Can also be toggled at runtime with `t`.
 
 #### Background Refresh Example
 To enable automatic refresh every 5 minutes with rate limiting:
@@ -183,7 +236,7 @@ category = "News"
 
 ### Data Storage
 
-Feedr stores your bookmarks, categories, and read items in:
+Feedr stores your bookmarks, categories, read/unread state, and starred articles in:
 - **Linux/macOS**: `~/.local/share/feedr/feedr_data.json`
 - **Windows**: `%LOCALAPPDATA%\feedr\feedr_data.json`
 
@@ -195,11 +248,14 @@ Feedr automatically migrates data from older versions to the new XDG-compliant l
 
 - **[ratatui](https://github.com/ratatui-org/ratatui)**: Terminal UI framework
 - **[crossterm](https://github.com/crossterm-rs/crossterm)**: Terminal manipulation
-- **[reqwest](https://github.com/seanmonstar/reqwest)**: HTTP client
-- **[rss](https://github.com/rust-syndication/rss)**: RSS parsing
+- **[reqwest](https://github.com/seanmonstar/reqwest)**: HTTP client (with gzip/deflate/brotli support)
+- **[feed-rs](https://github.com/feed-rs/feed-rs)**: RSS and Atom feed parsing
 - **[html2text](https://github.com/servo/html5ever)**: HTML to text conversion
 - **[chrono](https://github.com/chronotope/chrono)**: Date and time handling
 - **[serde](https://github.com/serde-rs/serde)**: Serialization/deserialization
+- **[clap](https://github.com/clap-rs/clap)**: Command-line argument parsing
+- **[opml](https://github.com/Holllo/opml)**: OPML import support
+- **[toml](https://github.com/toml-rs/toml)**: Configuration file parsing
 
 ## License
 
