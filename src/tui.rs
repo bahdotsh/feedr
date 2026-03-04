@@ -245,17 +245,12 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         }
                     }
                     KeyCode::Tab => {
-                        // Check if shift modifier is pressed
                         if key.modifiers.contains(event::KeyModifiers::SHIFT) {
-                            // With Shift+Tab, go from Feeds to Dashboard
-                            if matches!(app.view, View::FeedList) {
-                                app.view = View::Dashboard;
-                            }
+                            app.view = View::Starred;
+                            app.selected_item = None;
                         } else {
-                            // With Tab, go from Dashboard to Feeds
-                            if matches!(app.view, View::Dashboard) {
-                                app.view = View::FeedList;
-                            }
+                            app.view = View::FeedList;
+                            app.selected_item = None;
                         }
                     }
                     KeyCode::Char('a') => {
@@ -304,6 +299,31 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
                             ) {
                                 app.error = Some(format!("Failed to add feed: {}", e));
+                            }
+                        }
+                    }
+                    KeyCode::Char('s') => {
+                        if let Some(selected) = app.selected_item {
+                            let (feed_idx, item_idx) =
+                                if app.is_searching && selected < app.filtered_items.len() {
+                                    app.filtered_items[selected]
+                                } else if selected < app.dashboard_items.len() {
+                                    app.dashboard_items[selected]
+                                } else {
+                                    return Ok(false);
+                                };
+                            match app.toggle_item_starred(feed_idx, item_idx) {
+                                Ok(is_now_starred) => {
+                                    app.success_message = Some(if is_now_starred {
+                                        "\u{2605} Starred".to_string()
+                                    } else {
+                                        "\u{2606} Unstarred".to_string()
+                                    });
+                                    app.success_message_time = Some(std::time::Instant::now());
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Failed to toggle star: {}", e));
+                                }
                             }
                         }
                     }
@@ -414,7 +434,13 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 View::FeedList => match key.code {
                     KeyCode::Char('q') => return Ok(true),
                     KeyCode::Tab => {
-                        app.view = View::Dashboard;
+                        if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                            app.view = View::Dashboard;
+                            app.selected_item = None;
+                        } else {
+                            app.view = View::Starred;
+                            app.selected_item = None;
+                        }
                     }
                     KeyCode::Char('a') => {
                         app.input.clear();
@@ -506,6 +532,25 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         app.view = View::Dashboard;
                         app.selected_item = None;
                     }
+                    KeyCode::Char('s') => {
+                        if let Some(feed_idx) = app.selected_feed {
+                            if let Some(item_idx) = app.selected_item {
+                                match app.toggle_item_starred(feed_idx, item_idx) {
+                                    Ok(is_now_starred) => {
+                                        app.success_message = Some(if is_now_starred {
+                                            "\u{2605} Starred".to_string()
+                                        } else {
+                                            "\u{2606} Unstarred".to_string()
+                                        });
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                    }
+                                    Err(e) => {
+                                        app.error = Some(format!("Failed to toggle star: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     KeyCode::Char('/') => {
                         app.input.clear();
                         app.input_mode = InputMode::SearchMode;
@@ -583,6 +628,25 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 },
                 View::FeedItemDetail => match key.code {
                     KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('s') => {
+                        if let Some(feed_idx) = app.selected_feed {
+                            if let Some(item_idx) = app.selected_item {
+                                match app.toggle_item_starred(feed_idx, item_idx) {
+                                    Ok(is_now_starred) => {
+                                        app.success_message = Some(if is_now_starred {
+                                            "\u{2605} Starred".to_string()
+                                        } else {
+                                            "\u{2606} Unstarred".to_string()
+                                        });
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                    }
+                                    Err(e) => {
+                                        app.error = Some(format!("Failed to toggle star: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
                         if app.is_searching {
                             // Return to search results
@@ -668,6 +732,129 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                     }
                                 }
                             }
+                        }
+                    }
+                    _ => {}
+                },
+                View::Starred => match key.code {
+                    KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Tab => {
+                        if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                            app.view = View::FeedList;
+                            app.selected_item = None;
+                        } else {
+                            app.view = View::Dashboard;
+                            app.selected_item = None;
+                        }
+                    }
+                    KeyCode::Esc | KeyCode::Char('h') => {
+                        app.view = View::Dashboard;
+                        app.selected_item = None;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if let Some(selected) = app.selected_item {
+                            if selected > 0 {
+                                app.selected_item = Some(selected - 1);
+                            }
+                        } else {
+                            let starred = app.get_starred_dashboard_items();
+                            if !starred.is_empty() {
+                                app.selected_item = Some(0);
+                            }
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        let starred = app.get_starred_dashboard_items();
+                        if let Some(selected) = app.selected_item {
+                            if selected < starred.len().saturating_sub(1) {
+                                app.selected_item = Some(selected + 1);
+                            }
+                        } else if !starred.is_empty() {
+                            app.selected_item = Some(0);
+                        }
+                    }
+                    KeyCode::Enter => {
+                        let starred = app.get_starred_dashboard_items();
+                        if let Some(selected) = app.selected_item {
+                            if selected < starred.len() {
+                                let (feed_idx, item_idx) = starred[selected];
+                                app.selected_feed = Some(feed_idx);
+                                app.selected_item = Some(item_idx);
+                                app.view = View::FeedItemDetail;
+                                if let Err(e) = app.mark_item_as_read(feed_idx, item_idx) {
+                                    app.error = Some(format!("Failed to mark item as read: {}", e));
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char('s') => {
+                        let starred = app.get_starred_dashboard_items();
+                        if let Some(selected) = app.selected_item {
+                            if selected < starred.len() {
+                                let (feed_idx, item_idx) = starred[selected];
+                                match app.toggle_item_starred(feed_idx, item_idx) {
+                                    Ok(_) => {
+                                        app.success_message =
+                                            Some("\u{2606} Unstarred".to_string());
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                        // Adjust selection after removal
+                                        let new_starred = app.get_starred_dashboard_items();
+                                        if new_starred.is_empty() {
+                                            app.selected_item = None;
+                                        } else if selected >= new_starred.len() {
+                                            app.selected_item = Some(new_starred.len() - 1);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        app.error = Some(format!("Failed to unstar: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char(' ') => {
+                        let starred = app.get_starred_dashboard_items();
+                        if let Some(selected) = app.selected_item {
+                            if selected < starred.len() {
+                                let (feed_idx, item_idx) = starred[selected];
+                                match app.toggle_item_read(feed_idx, item_idx) {
+                                    Ok(is_now_read) => {
+                                        app.success_message = Some(if is_now_read {
+                                            "\u{2713} Marked as read".to_string()
+                                        } else {
+                                            "\u{25CB} Marked as unread".to_string()
+                                        });
+                                        app.success_message_time = Some(std::time::Instant::now());
+                                    }
+                                    Err(e) => {
+                                        app.error =
+                                            Some(format!("Failed to toggle read status: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char('o') => {
+                        let starred = app.get_starred_dashboard_items();
+                        if let Some(selected) = app.selected_item {
+                            if selected < starred.len() {
+                                let (feed_idx, item_idx) = starred[selected];
+                                app.selected_feed = Some(feed_idx);
+                                app.selected_item = Some(item_idx);
+                                if let Err(e) = app.open_current_item_in_browser() {
+                                    app.error = Some(format!("Failed to open link: {}", e));
+                                }
+                                // Restore selection for starred view
+                                app.selected_item = Some(selected);
+                            }
+                        }
+                    }
+                    KeyCode::Char('t') => {
+                        if let Err(e) = app.toggle_theme() {
+                            app.error = Some(format!("Failed to toggle theme: {}", e));
+                        } else {
+                            app.success_message = Some("Theme toggled".to_string());
+                            app.success_message_time = Some(std::time::Instant::now());
                         }
                     }
                     _ => {}
@@ -883,6 +1070,15 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     app.filter_options.read_status = match app.filter_options.read_status {
                         None => Some(true),        // Show read
                         Some(true) => Some(false), // Show unread
+                        Some(false) => None,       // Show all
+                    };
+                    app.apply_filters();
+                }
+                KeyCode::Char('s') => {
+                    // Cycle through starred filter
+                    app.filter_options.starred_only = match app.filter_options.starred_only {
+                        None => Some(true),        // Show starred
+                        Some(true) => Some(false), // Show unstarred
                         Some(false) => None,       // Show all
                     };
                     app.apply_filters();

@@ -270,6 +270,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         View::FeedItems => render_feed_items(f, app, chunks[1], &colors),
         View::FeedItemDetail => render_item_detail(f, app, chunks[1], &colors),
         View::CategoryManagement => render_category_management(f, app, chunks[1], &colors),
+        View::Starred => render_starred(f, app, chunks[1], &colors),
         View::Summary => render_summary(f, app, chunks[1], &colors),
     }
 
@@ -309,6 +310,7 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         "Items",
         "Detail",
         "Categories",
+        "Starred",
         "What's New",
     ];
     let selected_tab = match app.view {
@@ -317,7 +319,8 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         View::FeedItems => 2,
         View::FeedItemDetail => 3,
         View::CategoryManagement => 4,
-        View::Summary => 5,
+        View::Starred => 5,
+        View::Summary => 6,
     };
 
     // Theme-specific loading animation
@@ -630,6 +633,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
             let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
             let is_selected = app.selected_item == Some(idx);
             let is_read = app.is_item_read(feed_idx, item_idx);
+            let is_starred = app.is_item_starred(feed_idx, item_idx);
 
             // Create clearer visual group with theme-specific hierarchy
             ListItem::new(vec![
@@ -652,6 +656,10 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
                                 colors.text_secondary
                             })
                             .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        if is_starred { " \u{2605}" } else { "" },
+                        Style::default().fg(Color::Rgb(255, 215, 0)),
                     ),
                     Span::styled(
                         if is_read {
@@ -1160,6 +1168,9 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
                 let is_read = app
                     .selected_feed
                     .is_some_and(|feed_idx| app.is_item_read(feed_idx, idx));
+                let is_starred = app
+                    .selected_feed
+                    .is_some_and(|feed_idx| app.is_item_starred(feed_idx, idx));
 
                 // Use cached plain_text to avoid HTML parsing per frame
                 let snippet = if let Some(plain_text) = &item.plain_text {
@@ -1201,6 +1212,10 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
                                 } else {
                                     Modifier::empty()
                                 }),
+                        ),
+                        Span::styled(
+                            if is_starred { " \u{2605}" } else { "" },
+                            Style::default().fg(Color::Rgb(255, 215, 0)),
                         ),
                         Span::styled(
                             if is_read {
@@ -1464,6 +1479,151 @@ fn render_item_detail<B: Backend>(
     }
 }
 
+fn render_starred<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
+    let starred_items = app.get_starred_dashboard_items();
+    let title = format!(" \u{2605} Starred Articles ({}) ", starred_items.len());
+
+    if starred_items.is_empty() {
+        let star_icon = if colors.border_normal == BorderType::Double {
+            "\u{2606}" // Dark: hollow star
+        } else {
+            "\u{2605}" // Light: filled star
+        };
+
+        let mut text = Text::default();
+        text.lines.push(Line::from(""));
+        text.lines.push(Line::from(Span::styled(
+            format!("       {}       ", star_icon),
+            Style::default().fg(Color::Rgb(255, 215, 0)),
+        )));
+        text.lines.push(Line::from(""));
+        text.lines.push(Line::from(Span::styled(
+            "No starred articles yet",
+            Style::default()
+                .fg(colors.text)
+                .add_modifier(Modifier::BOLD),
+        )));
+        text.lines.push(Line::from(""));
+        text.lines.push(Line::from(Span::styled(
+            "Press s on any article to star it",
+            Style::default().fg(colors.highlight),
+        )));
+
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .title(title)
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(colors.border_normal)
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 2, 2, 2)),
+        );
+
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let arrow = colors.get_arrow_right();
+    let success_icon = colors.get_icon_success();
+    let items: Vec<ListItem> = starred_items
+        .iter()
+        .enumerate()
+        .map(|(idx, &(feed_idx, item_idx))| {
+            let feed = &app.feeds[feed_idx];
+            let item = &feed.items[item_idx];
+            let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
+            let is_selected = app.selected_item == Some(idx);
+            let is_read = app.is_item_read(feed_idx, item_idx);
+
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        if is_selected {
+                            format!("{} ", arrow)
+                        } else {
+                            "  ".to_string()
+                        },
+                        Style::default().fg(colors.highlight),
+                    ),
+                    Span::styled(
+                        feed.title.to_string(),
+                        Style::default()
+                            .fg(if is_selected {
+                                colors.secondary
+                            } else {
+                                colors.text_secondary
+                            })
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" \u{2605}", Style::default().fg(Color::Rgb(255, 215, 0))),
+                    Span::styled(
+                        if is_read {
+                            format!(" {}", success_icon)
+                        } else {
+                            "".to_string()
+                        },
+                        Style::default().fg(colors.success),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(
+                        &item.title,
+                        Style::default()
+                            .fg(if is_selected {
+                                colors.text
+                            } else if is_read {
+                                colors.text_secondary
+                            } else {
+                                colors.text
+                            })
+                            .add_modifier(if is_selected {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(date_str, Style::default().fg(colors.muted)),
+                ]),
+                Line::from(""),
+            ])
+            .style(Style::default().fg(colors.text).bg(if is_selected {
+                colors.selected_bg
+            } else {
+                colors.background
+            }))
+        })
+        .collect();
+
+    let starred_list = List::new(items)
+        .block(
+            Block::default()
+                .title(title)
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(colors.border_normal)
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 1, 1, 1)),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(colors.selected_bg)
+                .fg(colors.highlight)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("");
+
+    let mut state = ListState::default();
+    state.select(app.selected_item);
+
+    f.render_stateful_widget(starred_list, area, &mut state);
+}
+
 fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     // Match on the input mode and view to determine the help text and style
     let (help_text, _style) = match app.input_mode {
@@ -1473,7 +1633,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                     if app.feeds.is_empty() {
                         "a: Add feed | t: Theme | q: Quit | CTRL+C: Manage categories"
                     } else {
-                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | p: Preview | a: Add feed | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
+                        "\u{2191}/\u{2193}: Navigate | ENTER: View | s: Star | Space: Toggle read | p: Preview | a: Add | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
                     }
                 }
                 View::FeedList => {
@@ -1487,10 +1647,13 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                     "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | t: Theme | ESC/q: Back"
                 }
                 View::FeedItems => {
-                    "h/esc: back | home: dashboard | enter: view | Space: Toggle read | o: open | /: search | t: theme | q: quit"
+                    "h/esc: back | home: dashboard | enter: view | s: Star | Space: Toggle read | o: open | /: search | t: theme | q: quit"
                 }
                 View::FeedItemDetail => {
-                    "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast | Space: Toggle read | o: open | t: theme | q: quit"
+                    "h/esc: back | home: dashboard | \u{2191}/\u{2193}: scroll | PgUp/PgDn: fast | s: Star | Space: Toggle read | o: open | t: theme | q: quit"
+                }
+                View::Starred => {
+                    "\u{2191}/\u{2193}: Navigate | ENTER: View | s: Unstar | Space: Toggle read | o: Open | Tab: Switch view | q: Quit"
                 }
                 View::Summary => "Press any key to continue to Dashboard | q: Quit"
             };
@@ -1881,6 +2044,25 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSc
         ),
     ]));
 
+    // Starred filter
+    let starred_status = match app.filter_options.starred_only {
+        Some(true) => "[Starred]",
+        Some(false) => "[Not starred]",
+        None => "[Off]",
+    };
+
+    text.push(Line::from(vec![
+        Span::styled("  s - Starred: ", Style::default().fg(colors.text)),
+        Span::styled(
+            starred_status,
+            Style::default().fg(if app.filter_options.starred_only.is_some() {
+                colors.highlight
+            } else {
+                colors.muted
+            }),
+        ),
+    ]));
+
     // Clear filters option
     text.push(Line::from(""));
     text.push(Line::from(vec![
@@ -1896,7 +2078,7 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSc
 
     text.push(Line::from(vec![Span::styled(
         format!(
-            "  Active Filters: {}/5  |  Showing: {}/{} items",
+            "  Active Filters: {}/6  |  Showing: {}/{} items",
             active_count, filtered_count, total_count
         ),
         Style::default().fg(colors.muted),
