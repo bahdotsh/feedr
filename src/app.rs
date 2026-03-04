@@ -97,6 +97,9 @@ pub struct App {
     pub color_scheme: ColorScheme, // Cached color scheme to avoid per-frame construction
     pub last_session_time: Option<DateTime<Utc>>, // When the previous session started
     pub show_summary: bool,        // Whether to show summary after feeds load
+    pub preview_pane: bool,        // Whether to show article preview pane
+    pub preview_scroll: u16,       // Vertical scroll for preview pane
+    pub preview_max_scroll: u16,   // Maximum scroll for preview content
 }
 
 #[derive(Clone, Debug)]
@@ -181,6 +184,9 @@ impl App {
             color_scheme,
             last_session_time,
             show_summary,
+            preview_pane: false,
+            preview_scroll: 0,
+            preview_max_scroll: 0,
         };
 
         app.update_dashboard();
@@ -1039,6 +1045,17 @@ impl App {
         } else {
             std::time::Duration::from_secs(0)
         }
+    }
+
+    pub fn toggle_preview_pane(&mut self) {
+        self.preview_pane = !self.preview_pane;
+        self.preview_scroll = 0;
+        self.preview_max_scroll = 0;
+    }
+
+    pub fn reset_preview_scroll(&mut self) {
+        self.preview_scroll = 0;
+        self.preview_max_scroll = 0;
     }
 
     /// Get new items since last session, returns (feed_idx, item_idx, feed_title)

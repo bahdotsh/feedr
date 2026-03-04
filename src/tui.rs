@@ -294,19 +294,32 @@ fn handle_events(app: &mut App) -> Result<bool> {
                             }
                         }
                     }
+                    KeyCode::Char('p') => {
+                        app.toggle_preview_pane();
+                    }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        if let Some(selected) = app.selected_item {
+                        if key.modifiers.contains(KeyModifiers::SHIFT) && app.preview_pane {
+                            // Scroll preview up
+                            app.preview_scroll = app.preview_scroll.saturating_sub(1);
+                        } else if let Some(selected) = app.selected_item {
                             if selected > 0 {
                                 app.selected_item = Some(selected - 1);
+                                app.reset_preview_scroll();
                             }
                         } else if !app.dashboard_items.is_empty() {
                             app.selected_item = Some(0);
                         }
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        if let Some(selected) = app.selected_item {
+                        if key.modifiers.contains(KeyModifiers::SHIFT) && app.preview_pane {
+                            // Scroll preview down
+                            if app.preview_scroll < app.preview_max_scroll {
+                                app.preview_scroll = app.preview_scroll.saturating_add(1);
+                            }
+                        } else if let Some(selected) = app.selected_item {
                             if selected < app.dashboard_items.len() - 1 {
                                 app.selected_item = Some(selected + 1);
+                                app.reset_preview_scroll();
                             }
                         } else if !app.dashboard_items.is_empty() {
                             app.selected_item = Some(0);

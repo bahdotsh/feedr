@@ -386,7 +386,7 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
     f.render_widget(tabs, area);
 }
 
-fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
+fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, colors: &ColorScheme) {
     let search_icon = colors.get_icon_search();
     let mut title = if app.is_searching {
         format!(" {} Search Results: '{}' ", search_icon, app.search_query)
@@ -400,12 +400,13 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
     }
 
     // Use the filtered items when filters are active
-    let items_to_display = if app.is_searching {
-        &app.filtered_items
+    // Clone to owned Vec to allow mutable borrow of app for preview pane
+    let items_to_display: Vec<(usize, usize)> = if app.is_searching {
+        app.filtered_items.clone()
     } else if app.filter_options.is_active() {
-        &app.filtered_dashboard_items
+        app.filtered_dashboard_items.clone()
     } else {
-        &app.dashboard_items
+        app.dashboard_items.clone()
     };
 
     if items_to_display.is_empty() {
@@ -692,6 +693,17 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         })
         .collect();
 
+    // Split area for preview pane if active
+    let (list_area, preview_area) = if app.preview_pane {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let dashboard_list = List::new(items)
         .block(
             Block::default()
@@ -714,7 +726,144 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
     let mut state = ratatui::widgets::ListState::default();
     state.select(app.selected_item);
 
-    f.render_stateful_widget(dashboard_list, area, &mut state);
+    f.render_stateful_widget(dashboard_list, list_area, &mut state);
+
+    // Render preview pane
+    if let Some(preview_area) = preview_area {
+        render_preview_pane(f, app, preview_area, &items_to_display, colors);
+    }
+}
+
+fn render_preview_pane<B: Backend>(
+    f: &mut Frame<B>,
+    app: &mut App,
+    area: Rect,
+    items_to_display: &[(usize, usize)],
+    colors: &ColorScheme,
+) {
+    let selected = app.selected_item.unwrap_or(0);
+    let item_data = items_to_display
+        .get(selected)
+        .and_then(|&(feed_idx, item_idx)| {
+            app.feeds
+                .get(feed_idx)
+                .and_then(|feed| feed.items.get(item_idx).map(|item| (feed, item)))
+        });
+
+    let article_icon = colors.get_icon_article();
+
+    let Some((feed, item)) = item_data else {
+        let empty = Paragraph::new("No item selected")
+            .block(
+                Block::default()
+                    .title(format!(" {} Preview ", article_icon))
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(colors.border_normal)
+                    .border_style(Style::default().fg(colors.border))
+                    .style(Style::default().bg(colors.surface))
+                    .padding(Padding::new(2, 2, 1, 1)),
+            )
+            .style(Style::default().fg(colors.muted))
+            .alignment(Alignment::Center);
+        f.render_widget(empty, area);
+        return;
+    };
+
+    // Build preview content
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Title
+    lines.push(Line::from(vec![Span::styled(
+        &item.title,
+        Style::default()
+            .fg(colors.text)
+            .add_modifier(Modifier::BOLD),
+    )]));
+    lines.push(Line::from(""));
+
+    // Feed source
+    lines.push(Line::from(vec![Span::styled(
+        &feed.title,
+        Style::default()
+            .fg(colors.secondary)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    // Author and date
+    let mut meta_parts = Vec::new();
+    if let Some(author) = &item.author {
+        meta_parts.push(Span::styled(
+            author.as_str(),
+            Style::default()
+                .fg(colors.text_secondary)
+                .add_modifier(Modifier::ITALIC),
+        ));
+    }
+    if let Some(date) = &item.formatted_date {
+        if !meta_parts.is_empty() {
+            meta_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
+        }
+        meta_parts.push(Span::styled(
+            date.as_str(),
+            Style::default().fg(colors.muted),
+        ));
+    }
+    if !meta_parts.is_empty() {
+        lines.push(Line::from(meta_parts));
+    }
+
+    // Separator
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "─".repeat(area.width.saturating_sub(8) as usize),
+        Style::default().fg(colors.border),
+    )]));
+    lines.push(Line::from(""));
+
+    // Content
+    if let Some(desc) = &item.description {
+        let raw_text = from_read(desc.as_bytes(), area.width.saturating_sub(10) as usize);
+        let formatted = format_content_for_reading(&raw_text);
+        for line in formatted.lines() {
+            lines.push(Line::from(vec![Span::styled(
+                line.to_string(),
+                Style::default().fg(colors.text),
+            )]));
+        }
+    } else {
+        lines.push(Line::from(vec![Span::styled(
+            "No content available",
+            Style::default().fg(colors.muted),
+        )]));
+    }
+
+    let viewport_height = area
+        .height
+        .saturating_sub(2) // borders
+        .saturating_sub(2); // padding
+
+    let content_lines = lines.len() as u16;
+    app.preview_max_scroll = content_lines.saturating_sub(viewport_height);
+    if app.preview_scroll > app.preview_max_scroll {
+        app.preview_scroll = app.preview_max_scroll;
+    }
+
+    let preview = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(format!(" {} Preview ", article_icon))
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(colors.border_normal)
+                .border_style(Style::default().fg(colors.border_focus))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 2, 1, 1)),
+        )
+        .scroll((app.preview_scroll, 0))
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(preview, area);
 }
 
 fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
@@ -1298,7 +1447,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                     if app.feeds.is_empty() {
                         "a: Add feed | t: Theme | q: Quit | CTRL+C: Manage categories"
                     } else {
-                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | a: Add feed | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
+                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | p: Preview | a: Add feed | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
                     }
                 }
                 View::FeedList => {
