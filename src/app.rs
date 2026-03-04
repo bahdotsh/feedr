@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::feed::{Feed, FeedCategory, FeedItem};
+use crate::ui::ColorScheme;
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -83,15 +83,16 @@ pub struct App {
     pub is_loading: bool,                    // Flag to indicate loading/refreshing state
     pub loading_indicator: usize,            // For animated loading indicator
     pub filter_options: FilterOptions,
-    pub filter_mode: bool,       // Whether we're in filter selection mode
-    pub read_items: Vec<String>, // Track read item IDs
+    pub filter_mode: bool,           // Whether we're in filter selection mode
+    pub read_items: HashSet<String>, // Track read item IDs
     pub filtered_dashboard_items: Vec<(usize, usize)>, // Filtered items for dashboard
     pub category_action: Option<CategoryAction>, // For category management
     pub detail_vertical_scroll: u16, // Vertical scroll value for item detail view
-    pub detail_max_scroll: u16,  // Maximum scroll value for current content
+    pub detail_max_scroll: u16,      // Maximum scroll value for current content
     pub last_refresh: Option<Instant>, // Track when last refresh occurred
-    pub refresh_in_progress: bool, // Prevent concurrent refreshes
+    pub refresh_in_progress: bool,   // Prevent concurrent refreshes
     pub last_domain_fetch: HashMap<String, Instant>, // Track last fetch time per domain for rate limiting
+    pub color_scheme: ColorScheme, // Cached color scheme to avoid per-frame construction
 }
 
 #[derive(Clone, Debug)]
@@ -105,7 +106,7 @@ pub enum CategoryAction {
 struct SavedData {
     bookmarks: Vec<String>,
     categories: Vec<FeedCategory>,
-    read_items: Vec<String>,
+    read_items: HashSet<String>,
 }
 
 impl Default for App {
@@ -125,10 +126,11 @@ impl App {
         let saved_data = Self::load_saved_data().unwrap_or_else(|_| SavedData {
             bookmarks: vec![],
             categories: vec![],
-            read_items: vec![],
+            read_items: HashSet::new(),
         });
 
         let has_bookmarks = !saved_data.bookmarks.is_empty();
+        let color_scheme = ColorScheme::from_theme(&config.ui.theme);
 
         let mut app = Self {
             config,
@@ -160,6 +162,7 @@ impl App {
             last_refresh: None,
             refresh_in_progress: false,
             last_domain_fetch: HashMap::new(),
+            color_scheme,
         };
 
         app.update_dashboard();
@@ -207,7 +210,7 @@ impl App {
             return Ok(SavedData {
                 bookmarks: Vec::new(),
                 categories: Vec::new(),
-                read_items: Vec::new(),
+                read_items: HashSet::new(),
             });
         }
 
@@ -295,7 +298,9 @@ impl App {
         // First update the dashboard items normally
         if !self.filter_options.is_active() {
             // No filters active, so filtered items are the same as dashboard items
-            self.filtered_dashboard_items = self.dashboard_items.clone();
+            // Use clone_from to reuse existing allocation
+            self.filtered_dashboard_items
+                .clone_from(&self.dashboard_items);
             return;
         }
 
@@ -329,38 +334,33 @@ impl App {
             }
         }
 
-        // Check age filter
+        // Check age filter using cached parsed_date (avoids re-parsing RFC3339 strings)
         if let Some(age_filter) = &self.filter_options.age {
-            if let Some(date_str) = &item.pub_date {
-                if let Ok(date) = DateTime::parse_from_rfc2822(date_str) {
-                    let now = Utc::now();
-                    let duration = now.signed_duration_since(date.with_timezone(&Utc));
+            if let Some(date) = &item.parsed_date {
+                let now = chrono::Utc::now();
+                let duration = now.signed_duration_since(*date);
 
-                    match age_filter {
-                        TimeFilter::Today => {
-                            if duration.num_hours() > 24 {
-                                return false;
-                            }
-                        }
-                        TimeFilter::ThisWeek => {
-                            if duration.num_days() > 7 {
-                                return false;
-                            }
-                        }
-                        TimeFilter::ThisMonth => {
-                            if duration.num_days() > 30 {
-                                return false;
-                            }
-                        }
-                        TimeFilter::Older => {
-                            if duration.num_days() <= 30 {
-                                return false;
-                            }
+                match age_filter {
+                    TimeFilter::Today => {
+                        if duration.num_hours() > 24 {
+                            return false;
                         }
                     }
-                } else {
-                    // Can't parse date, so filter out if age filter is active
-                    return false;
+                    TimeFilter::ThisWeek => {
+                        if duration.num_days() > 7 {
+                            return false;
+                        }
+                    }
+                    TimeFilter::ThisMonth => {
+                        if duration.num_days() > 30 {
+                            return false;
+                        }
+                    }
+                    TimeFilter::Older => {
+                        if duration.num_days() <= 30 {
+                            return false;
+                        }
+                    }
                 }
             } else {
                 // No date, so filter out if age filter is active
@@ -386,10 +386,9 @@ impl App {
             }
         }
 
-        // Check content length filter
+        // Check content length filter using cached plain_text (avoids HTML parsing)
         if let Some(min_length) = self.filter_options.min_length {
-            if let Some(desc) = &item.description {
-                let plain_text = html2text::from_read(desc.as_bytes(), 80);
+            if let Some(plain_text) = &item.plain_text {
                 if plain_text.len() < min_length {
                     return false;
                 }
@@ -418,8 +417,7 @@ impl App {
     // Mark an item as read
     pub fn mark_item_as_read(&mut self, feed_idx: usize, item_idx: usize) -> Result<()> {
         let item_id = self.get_item_id(feed_idx, item_idx);
-        if !item_id.is_empty() && !self.read_items.contains(&item_id) {
-            self.read_items.push(item_id);
+        if !item_id.is_empty() && self.read_items.insert(item_id) {
             self.save_data()?;
         }
         Ok(())
@@ -429,16 +427,15 @@ impl App {
     pub fn toggle_item_read(&mut self, feed_idx: usize, item_idx: usize) -> Result<bool> {
         let item_id = self.get_item_id(feed_idx, item_idx);
         if !item_id.is_empty() {
-            let is_now_read =
-                if let Some(pos) = self.read_items.iter().position(|id| id == &item_id) {
-                    // Item is read, mark as unread
-                    self.read_items.remove(pos);
-                    false
-                } else {
-                    // Item is unread, mark as read
-                    self.read_items.push(item_id);
-                    true
-                };
+            let is_now_read = if self.read_items.contains(&item_id) {
+                // Item is read, mark as unread
+                self.read_items.remove(&item_id);
+                false
+            } else {
+                // Item is unread, mark as read
+                self.read_items.insert(item_id);
+                true
+            };
             self.save_data()?;
             Ok(is_now_read)
         } else {
@@ -461,12 +458,7 @@ impl App {
 
         for (feed_idx, feed) in self.feeds.iter().enumerate() {
             for (item_idx, item) in feed.items.iter().enumerate() {
-                let date = item
-                    .pub_date
-                    .as_ref()
-                    .and_then(|date_str| DateTime::parse_from_rfc2822(date_str).ok());
-
-                all_items.push((feed_idx, item_idx, date));
+                all_items.push((feed_idx, item_idx, item.parsed_date));
             }
         }
 
@@ -614,19 +606,19 @@ impl App {
 
         self.filtered_items.clear();
         for (feed_idx, feed) in self.feeds.iter().enumerate() {
-            if feed.title.to_lowercase().contains(&self.search_query) {
+            if feed.title_lower.contains(&self.search_query) {
                 // Add all items from matching feed
                 for item_idx in 0..feed.items.len() {
                     self.filtered_items.push((feed_idx, item_idx));
                 }
             } else {
-                // Check individual items
+                // Check individual items using pre-lowercased title and cached plain_text
                 for (item_idx, item) in feed.items.iter().enumerate() {
-                    if item.title.to_lowercase().contains(&self.search_query)
+                    if item.title_lower.contains(&self.search_query)
                         || item
-                            .description
+                            .plain_text
                             .as_ref()
-                            .is_some_and(|d| d.to_lowercase().contains(&self.search_query))
+                            .is_some_and(|pt| pt.to_lowercase().contains(&self.search_query))
                     {
                         self.filtered_items.push((feed_idx, item_idx));
                     }
@@ -1023,6 +1015,9 @@ impl App {
             Theme::Dark => Theme::Light,
             Theme::Light => Theme::Dark,
         };
+
+        // Update cached color scheme
+        self.color_scheme = ColorScheme::from_theme(&self.config.ui.theme);
 
         // Save the updated config
         self.config.save()?;

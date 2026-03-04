@@ -133,70 +133,70 @@ impl ColorScheme {
     }
 
     /// Get theme-specific empty feed ASCII art
-    pub fn get_empty_feed_art(&self) -> Vec<String> {
+    pub fn get_empty_feed_art(&self) -> &'static [&'static str] {
         if self.border_normal == BorderType::Double {
             // Dark theme: Cyberpunk terminal
-            vec![
-                "                                           ".to_string(),
-                "       ╔═══════════════════╗               ".to_string(),
-                "       ║  ◢◣  C Y B E R  ◤◥  ║               ".to_string(),
-                "       ║   ═══════════════  ║               ".to_string(),
-                "       ║   > NO_SIGNAL_    ║               ".to_string(),
-                "       ║   > INIT_FEED...  ║               ".to_string(),
-                "       ╚═══════════════════╝               ".to_string(),
-                "                                           ".to_string(),
+            &[
+                "                                           ",
+                "       ╔═══════════════════╗               ",
+                "       ║  ◢◣  C Y B E R  ◤◥  ║               ",
+                "       ║   ═══════════════  ║               ",
+                "       ║   > NO_SIGNAL_    ║               ",
+                "       ║   > INIT_FEED...  ║               ",
+                "       ╚═══════════════════╝               ",
+                "                                           ",
             ]
         } else {
             // Light theme: Zen garden with simple plant
-            vec![
-                "                                           ".to_string(),
-                "              _                            ".to_string(),
-                "             ( )                           ".to_string(),
-                "              |                            ".to_string(),
-                "             / \\                           ".to_string(),
-                "            /   \\                          ".to_string(),
-                "           -------                         ".to_string(),
-                "                                           ".to_string(),
+            &[
+                "                                           ",
+                "              _                            ",
+                "             ( )                           ",
+                "              |                            ",
+                "             / \\                           ",
+                "            /   \\                          ",
+                "           -------                         ",
+                "                                           ",
             ]
         }
     }
 
     /// Get theme-specific dashboard welcome art
-    pub fn get_dashboard_art(&self) -> Vec<String> {
+    pub fn get_dashboard_art(&self) -> &'static [&'static str] {
         if self.border_normal == BorderType::Double {
             // Dark theme: Cyberpunk glitch aesthetic
-            vec![
-                "                                                ".to_string(),
-                "  ███████╗███████╗███████╗██████╗ ██████╗      ".to_string(),
-                "  ██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗     ".to_string(),
-                "  █████╗  █████╗  █████╗  ██║  ██║██████╔╝     ".to_string(),
-                "  ██╔══╝  ██╔══╝  ██╔══╝  ██║  ██║██╔══██╗     ".to_string(),
-                "  ██║     ███████╗███████╗██████╔╝██║  ██║     ".to_string(),
-                "  ╚═╝     ╚══════╝╚══════╝╚═════╝ ╚═╝  ╚═╝     ".to_string(),
-                "  ═══════════════════════════════════════════  ".to_string(),
-                "  ◢◣ NEURAL FEED INTERFACE v2.0 ◤◥             ".to_string(),
-                "  ═══════════════════════════════════════════  ".to_string(),
-                "                                                ".to_string(),
-                "  ▸ INITIALIZE: Press 'a' to add feed URL       ".to_string(),
-                "  ▸ CONNECT TO DATA STREAMS                     ".to_string(),
-                "                                                ".to_string(),
+            &[
+                "                                                ",
+                "  ███████╗███████╗███████╗██████╗ ██████╗      ",
+                "  ██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗     ",
+                "  █████╗  █████╗  █████╗  ██║  ██║██████╔╝     ",
+                "  ██╔══╝  ██╔══╝  ██╔══╝  ██║  ██║██╔══██╗     ",
+                "  ██║     ███████╗███████╗██████╔╝██║  ██║     ",
+                "  ╚═╝     ╚══════╝╚══════╝╚═════╝ ╚═╝  ╚═╝     ",
+                "  ═══════════════════════════════════════════  ",
+                "  ◢◣ NEURAL FEED INTERFACE v2.0 ◤◥             ",
+                "  ═══════════════════════════════════════════  ",
+                "                                                ",
+                "  ▸ INITIALIZE: Press 'a' to add feed URL       ",
+                "  ▸ CONNECT TO DATA STREAMS                     ",
+                "                                                ",
             ]
         } else {
             // Light theme: Zen minimalist
-            vec![
-                "                                                ".to_string(),
-                "                                                ".to_string(),
-                "            F  e  e  d  r                      ".to_string(),
-                "                                                ".to_string(),
-                "         ─────────────────                     ".to_string(),
-                "                                                ".to_string(),
-                "         A mindful RSS reader                   ".to_string(),
-                "                                                ".to_string(),
-                "                                                ".to_string(),
-                "  🍃  Begin by adding your first feed           ".to_string(),
-                "       Press 'a' to add a feed URL              ".to_string(),
-                "                                                ".to_string(),
-                "                                                ".to_string(),
+            &[
+                "                                                ",
+                "                                                ",
+                "            F  e  e  d  r                      ",
+                "                                                ",
+                "         ─────────────────                     ",
+                "                                                ",
+                "         A mindful RSS reader                   ",
+                "                                                ",
+                "                                                ",
+                "  🍃  Begin by adding your first feed           ",
+                "       Press 'a' to add a feed URL              ",
+                "                                                ",
+                "                                                ",
             ]
         }
     }
@@ -244,8 +244,8 @@ impl ColorScheme {
 }
 
 pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
-    // Get the color scheme based on the current theme
-    let colors = ColorScheme::from_theme(&app.config.ui.theme);
+    // Use the cached color scheme from app state
+    let colors = app.color_scheme.clone();
 
     // Set background color for the entire terminal
     let bg_block = Block::default().style(Style::default().bg(colors.background));
@@ -736,7 +736,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         let mut text = Text::default();
         let art_lines = colors.get_empty_feed_art();
 
-        for line in &art_lines {
+        for &line in art_lines {
             // Style based on theme
             if colors.border_normal == BorderType::Double {
                 // Dark theme styling
@@ -769,7 +769,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
                         Style::default().fg(colors.highlight),
                     )));
                 } else {
-                    text.lines.push(Line::from(line.as_str()));
+                    text.lines.push(Line::from(line));
                 }
             } else {
                 // Light theme styling
@@ -785,7 +785,7 @@ fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
                         Style::default().fg(colors.primary),
                     )));
                 } else {
-                    text.lines.push(Line::from(line.as_str()));
+                    text.lines.push(Line::from(line));
                 }
             }
         }
@@ -977,9 +977,8 @@ fn render_feed_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors
                     .selected_feed
                     .is_some_and(|feed_idx| app.is_item_read(feed_idx, idx));
 
-                // Better formatted snippet with HTML cleanup
-                let snippet = if let Some(desc) = &item.description {
-                    let plain_text = html2text::from_read(desc.as_bytes(), 50);
+                // Use cached plain_text to avoid HTML parsing per frame
+                let snippet = if let Some(plain_text) = &item.plain_text {
                     // Remove excess whitespace for cleaner display
                     let clean_text = plain_text
                         .replace('\n', " ")
