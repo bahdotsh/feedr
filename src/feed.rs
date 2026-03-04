@@ -83,15 +83,28 @@ impl Feed {
         timeout_secs: u64,
         user_agent: Option<&str>,
     ) -> Result<Self> {
-        let default_user_agent =
-            "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)";
-        let ua = user_agent.unwrap_or(default_user_agent);
+        let client = Self::build_client(timeout_secs)?;
+        Self::from_url_with_client(url, &client, user_agent)
+    }
 
-        let client = reqwest::blocking::Client::builder()
+    /// Build a shared HTTP client with the given timeout
+    pub fn build_client(timeout_secs: u64) -> Result<reqwest::blocking::Client> {
+        reqwest::blocking::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
             .timeout(Duration::from_secs(timeout_secs))
             .build()
-            .context("Failed to create HTTP client")?;
+            .context("Failed to create HTTP client")
+    }
+
+    /// Fetch and parse a feed from a URL using a pre-built client
+    pub fn from_url_with_client(
+        url: &str,
+        client: &reqwest::blocking::Client,
+        user_agent: Option<&str>,
+    ) -> Result<Self> {
+        let default_user_agent =
+            "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)";
+        let ua = user_agent.unwrap_or(default_user_agent);
 
         let response = client
             .get(url)

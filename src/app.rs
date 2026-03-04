@@ -128,6 +128,8 @@ impl App {
             read_items: vec![],
         });
 
+        let has_bookmarks = !saved_data.bookmarks.is_empty();
+
         let mut app = Self {
             config,
             feeds: Vec::new(),
@@ -146,7 +148,7 @@ impl App {
             is_searching: false,
             filtered_items: Vec::new(),
             dashboard_items: Vec::new(),
-            is_loading: false,
+            is_loading: has_bookmarks,
             loading_indicator: 0,
             filter_options: FilterOptions::new(),
             filter_mode: false,
@@ -160,8 +162,6 @@ impl App {
             last_domain_fetch: HashMap::new(),
         };
 
-        // Load bookmarked feeds
-        app.load_bookmarked_feeds();
         app.update_dashboard();
 
         app
@@ -169,12 +169,34 @@ impl App {
 
     pub fn load_bookmarked_feeds(&mut self) {
         self.feeds.clear();
+        if self.bookmarks.is_empty() {
+            return;
+        }
+
         let timeout = self.config.network.http_timeout;
-        let user_agent = &self.config.network.user_agent;
-        for url in &self.bookmarks {
-            match Feed::from_url_with_config(url, timeout, Some(user_agent)) {
-                Ok(feed) => self.feeds.push(feed),
-                Err(_) => { /* Skip failed feeds */ }
+        let user_agent = self.config.network.user_agent.clone();
+
+        let client = match Feed::build_client(timeout) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        // Spawn a thread per bookmark URL for parallel fetching
+        let handles: Vec<_> = self
+            .bookmarks
+            .iter()
+            .map(|url| {
+                let client = client.clone();
+                let url = url.clone();
+                let ua = user_agent.clone();
+                std::thread::spawn(move || Feed::from_url_with_client(&url, &client, Some(&ua)))
+            })
+            .collect();
+
+        // Collect results in original bookmark order
+        for handle in handles {
+            if let Ok(Ok(feed)) = handle.join() {
+                self.feeds.push(feed);
             }
         }
     }
@@ -638,26 +660,74 @@ impl App {
 
         let timeout = self.config.network.http_timeout;
         let user_agent = self.config.network.user_agent.clone();
+        let rate_limit_delay = self.config.general.refresh_rate_limit_delay;
+
+        // Pre-calculate per-domain delays before spawning threads
+        let domain_delays: HashMap<String, std::time::Duration> = domain_groups
+            .keys()
+            .map(|domain| (domain.clone(), self.calculate_required_delay(domain)))
+            .collect();
+
         self.feeds.clear();
 
-        // Process each domain group with rate limiting
-        for (domain, urls) in domain_groups {
-            // Calculate and apply required delay for this domain
-            let delay = self.calculate_required_delay(&domain);
-            if !delay.is_zero() {
-                std::thread::sleep(delay);
+        let client = match Feed::build_client(timeout) {
+            Ok(c) => c,
+            Err(e) => {
+                self.is_loading = false;
+                self.refresh_in_progress = false;
+                return Err(e);
             }
+        };
 
-            // Fetch all feeds from this domain
-            for url in &urls {
-                match Feed::from_url_with_config(url, timeout, Some(&user_agent)) {
-                    Ok(feed) => self.feeds.push(feed),
-                    Err(e) => self.error = Some(format!("Failed to refresh feed {}: {}", url, e)),
+        // Spawn one thread per domain group — domains fetch in parallel,
+        // feeds within the same domain fetch sequentially (rate limiting)
+        let handles: Vec<_> = domain_groups
+            .into_iter()
+            .map(|(domain, urls)| {
+                let client = client.clone();
+                let ua = user_agent.clone();
+                let delay = domain_delays.get(&domain).copied().unwrap_or_default();
+                let rate_limit = std::time::Duration::from_millis(rate_limit_delay);
+
+                std::thread::spawn(move || {
+                    if !delay.is_zero() {
+                        std::thread::sleep(delay);
+                    }
+
+                    let mut results = Vec::new();
+                    for (i, url) in urls.iter().enumerate() {
+                        // Rate-limit between feeds on the same domain
+                        if i > 0 && !rate_limit.is_zero() {
+                            std::thread::sleep(rate_limit);
+                        }
+                        results.push((
+                            url.clone(),
+                            Feed::from_url_with_client(url, &client, Some(&ua)),
+                        ));
+                    }
+                    (domain, results)
+                })
+            })
+            .collect();
+
+        // Collect results and update domain fetch times
+        let mut errors = Vec::new();
+        for handle in handles {
+            if let Ok((domain, results)) = handle.join() {
+                for (url, result) in results {
+                    match result {
+                        Ok(feed) => self.feeds.push(feed),
+                        Err(e) => {
+                            errors.push(format!("Failed to refresh feed {}: {}", url, e));
+                        }
+                    }
                 }
+                self.last_domain_fetch.insert(domain, Instant::now());
             }
+        }
 
-            // Update the last fetch time for this domain
-            self.last_domain_fetch.insert(domain, Instant::now());
+        if let Some(last_error) = errors.last() {
+            self.error = Some(last_error.clone());
         }
 
         self.update_dashboard();

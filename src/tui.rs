@@ -1,4 +1,5 @@
 use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
+use crate::feed::Feed;
 use crate::ui;
 use anyhow::Result;
 use crossterm::{
@@ -12,6 +13,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     Terminal,
 };
+use std::sync::mpsc;
 use std::{io, time::Duration};
 
 pub fn run(mut app: App) -> Result<()> {
@@ -47,8 +49,64 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
     let tick_rate = Duration::from_millis(app.config.ui.tick_rate);
     let error_timeout = Duration::from_millis(app.config.ui.error_display_timeout);
 
+    // Spawn background threads to load bookmarked feeds
+    let mut pending_count: usize = 0;
+    let (feed_tx, feed_rx) = mpsc::channel::<(usize, Result<Feed>)>();
+
+    if !app.bookmarks.is_empty() {
+        let timeout = app.config.network.http_timeout;
+        let user_agent = app.config.network.user_agent.clone();
+
+        if let Ok(client) = Feed::build_client(timeout) {
+            pending_count = app.bookmarks.len();
+            for (idx, url) in app.bookmarks.iter().enumerate() {
+                let client = client.clone();
+                let url = url.clone();
+                let ua = user_agent.clone();
+                let tx = feed_tx.clone();
+                std::thread::spawn(move || {
+                    let result = Feed::from_url_with_client(&url, &client, Some(&ua));
+                    let _ = tx.send((idx, result));
+                });
+            }
+        } else {
+            app.is_loading = false;
+        }
+    }
+    // Drop our copy so the channel closes when all threads finish
+    drop(feed_tx);
+
     loop {
         terminal.draw(|f| ui::render(f, app))?;
+
+        // Drain any feeds that arrived from background threads
+        if pending_count > 0 {
+            while let Ok((idx, result)) = feed_rx.try_recv() {
+                if let Ok(feed) = result {
+                    // Insert at the correct position to maintain bookmark order,
+                    // or append if earlier feeds haven't arrived yet
+                    let insert_pos = app
+                        .feeds
+                        .iter()
+                        .position(|f| {
+                            app.bookmarks
+                                .iter()
+                                .position(|b| b == &f.url)
+                                .unwrap_or(usize::MAX)
+                                > idx
+                        })
+                        .unwrap_or(app.feeds.len());
+                    app.feeds.insert(insert_pos, feed);
+                    app.update_dashboard();
+                }
+                pending_count -= 1;
+                if pending_count == 0 {
+                    app.is_loading = false;
+                    app.last_refresh = Some(std::time::Instant::now());
+                    app.update_dashboard();
+                }
+            }
+        }
 
         // If loading, use a shorter timeout for animation
         let timeout = if app.is_loading {
