@@ -1541,13 +1541,13 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
                 .add_modifier(Modifier::BOLD),
         );
 
+    // Offsets: 1 (border) + 3 (padding left/right), 1 (border) + 2 (padding top) + 4 (title, sep, help, spacer)
     let input_rect = Rect::new(area.x + 4, area.y + 7, area.width.saturating_sub(8), 1);
 
     f.render_widget(input_paragraph, input_rect);
 
-    if matches!(app.input_mode, InputMode::InsertUrl) {
-        f.set_cursor(input_rect.x + app.input.len() as u16, input_rect.y);
-    }
+    let cursor_x = input_rect.x + app.input.chars().count() as u16;
+    f.set_cursor(cursor_x.min(input_rect.x + input_rect.width), input_rect.y);
 }
 
 fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
