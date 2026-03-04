@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::feed::{Feed, FeedCategory, FeedItem};
 use crate::ui::ColorScheme;
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -59,6 +60,7 @@ pub enum View {
     FeedItems,
     FeedItemDetail,
     CategoryManagement,
+    Summary,
 }
 
 #[derive(Clone, Debug)]
@@ -91,8 +93,14 @@ pub struct App {
     pub detail_max_scroll: u16,      // Maximum scroll value for current content
     pub last_refresh: Option<Instant>, // Track when last refresh occurred
     pub refresh_in_progress: bool,   // Prevent concurrent refreshes
+    pub refresh_requested: bool,     // Signal to main loop to start a non-blocking refresh
     pub last_domain_fetch: HashMap<String, Instant>, // Track last fetch time per domain for rate limiting
     pub color_scheme: ColorScheme, // Cached color scheme to avoid per-frame construction
+    pub last_session_time: Option<DateTime<Utc>>, // When the previous session started
+    pub show_summary: bool,        // Whether to show summary after feeds load
+    pub preview_pane: bool,        // Whether to show article preview pane
+    pub preview_scroll: u16,       // Vertical scroll for preview pane
+    pub preview_max_scroll: u16,   // Maximum scroll for preview content
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +115,8 @@ struct SavedData {
     bookmarks: Vec<String>,
     categories: Vec<FeedCategory>,
     read_items: HashSet<String>,
+    #[serde(default)]
+    last_session_time: Option<String>,
 }
 
 impl Default for App {
@@ -127,10 +137,20 @@ impl App {
             bookmarks: vec![],
             categories: vec![],
             read_items: HashSet::new(),
+            last_session_time: None,
         });
 
         let has_bookmarks = !saved_data.bookmarks.is_empty();
         let color_scheme = ColorScheme::from_theme(&config.ui.theme);
+
+        // Parse last session time from saved data
+        let last_session_time = saved_data
+            .last_session_time
+            .as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        let show_summary = last_session_time.is_some() && has_bookmarks;
 
         let mut app = Self {
             config,
@@ -161,8 +181,14 @@ impl App {
             detail_max_scroll: 0,
             last_refresh: None,
             refresh_in_progress: false,
+            refresh_requested: false,
             last_domain_fetch: HashMap::new(),
             color_scheme,
+            last_session_time,
+            show_summary,
+            preview_pane: false,
+            preview_scroll: 0,
+            preview_max_scroll: 0,
         };
 
         app.update_dashboard();
@@ -211,6 +237,7 @@ impl App {
                 bookmarks: Vec::new(),
                 categories: Vec::new(),
                 read_items: HashSet::new(),
+                last_session_time: None,
             });
         }
 
@@ -219,7 +246,7 @@ impl App {
         Ok(saved_data)
     }
 
-    fn save_data(&self) -> Result<()> {
+    pub fn save_data(&self) -> Result<()> {
         let path = Self::data_path();
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
@@ -229,6 +256,7 @@ impl App {
             bookmarks: self.bookmarks.clone(),
             categories: self.categories.clone(),
             read_items: self.read_items.clone(),
+            last_session_time: Some(Utc::now().to_rfc3339()),
         };
 
         let json = serde_json::to_string(&saved_data)?;
@@ -596,6 +624,17 @@ impl App {
         Ok(())
     }
 
+    pub fn live_search(&mut self, query: &str) {
+        self.search_feeds(query);
+        self.view = View::Dashboard;
+        let count = self.filtered_items.len();
+        match self.selected_item {
+            Some(sel) if count > 0 && sel >= count => self.selected_item = Some(count - 1),
+            None if count > 0 => self.selected_item = Some(0),
+            _ => {}
+        }
+    }
+
     pub fn search_feeds(&mut self, query: &str) {
         self.search_query = query.to_lowercase();
         self.is_searching = !query.is_empty();
@@ -946,6 +985,18 @@ impl App {
         }
     }
 
+    /// Update the maximum scroll value for preview pane based on content height and viewport height
+    pub fn update_preview_max_scroll(&mut self, content_lines: u16, viewport_height: u16) {
+        self.preview_max_scroll = content_lines.saturating_sub(viewport_height);
+    }
+
+    /// Clamp the preview scroll position to valid bounds
+    pub fn clamp_preview_scroll(&mut self) {
+        if self.preview_scroll > self.preview_max_scroll {
+            self.preview_scroll = self.preview_max_scroll;
+        }
+    }
+
     /// Exit the detail view and reset scroll position
     pub fn exit_detail_view(&mut self, new_view: View) {
         self.detail_vertical_scroll = 0;
@@ -1007,6 +1058,57 @@ impl App {
         }
     }
 
+    pub fn toggle_preview_pane(&mut self) {
+        self.preview_pane = !self.preview_pane;
+        self.preview_scroll = 0;
+        self.preview_max_scroll = 0;
+    }
+
+    pub fn reset_preview_scroll(&mut self) {
+        self.preview_scroll = 0;
+        self.preview_max_scroll = 0;
+    }
+
+    /// Get new items since last session, returns (feed_idx, item_idx, feed_title)
+    pub fn get_new_items_since_session(&self) -> Vec<(usize, usize, &str)> {
+        let session_time = match self.last_session_time {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let mut items = Vec::new();
+        for (feed_idx, feed) in self.feeds.iter().enumerate() {
+            for (item_idx, item) in feed.items.iter().enumerate() {
+                if let Some(parsed_date) = item.parsed_date {
+                    if parsed_date > session_time {
+                        items.push((feed_idx, item_idx, feed.title.as_str()));
+                    }
+                }
+            }
+        }
+        items
+    }
+
+    /// Get summary stats for the "What's New" view
+    pub fn get_summary_stats(&self) -> (usize, Vec<(String, usize)>) {
+        let new_items = self.get_new_items_since_session();
+        let total = new_items.len();
+
+        // Count items per feed
+        let mut feed_counts: HashMap<&str, usize> = HashMap::new();
+        for &(_, _, feed_title) in &new_items {
+            *feed_counts.entry(feed_title).or_insert(0) += 1;
+        }
+
+        let mut feeds_with_counts: Vec<(String, usize)> = feed_counts
+            .into_iter()
+            .map(|(name, count)| (name.to_string(), count))
+            .collect();
+        feeds_with_counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+        (total, feeds_with_counts)
+    }
+
     /// Toggle between light and dark themes
     pub fn toggle_theme(&mut self) -> Result<()> {
         use crate::config::Theme;
@@ -1048,6 +1150,208 @@ mod tests {
             App::extract_domain_from_url("https://www.example.com/"),
             "example.com"
         );
+    }
+
+    /// Helper to create a minimal App with test feeds, avoiding filesystem I/O
+    fn make_test_app() -> App {
+        let mut app = App::new();
+        app.feeds = vec![
+            Feed {
+                url: "https://example.com/feed1".to_string(),
+                title: "Feed One".to_string(),
+                title_lower: "feed one".to_string(),
+                items: vec![
+                    FeedItem {
+                        title: "Old Article".to_string(),
+                        title_lower: "old article".to_string(),
+                        link: Some("https://example.com/old".to_string()),
+                        description: Some("Old content".to_string()),
+                        pub_date: None,
+                        author: Some("Author A".to_string()),
+                        formatted_date: None,
+                        parsed_date: Some(Utc::now() - chrono::Duration::days(30)),
+                        plain_text: Some("Old content".to_string()),
+                    },
+                    FeedItem {
+                        title: "New Article".to_string(),
+                        title_lower: "new article".to_string(),
+                        link: Some("https://example.com/new".to_string()),
+                        description: Some("New content".to_string()),
+                        pub_date: None,
+                        author: None,
+                        formatted_date: None,
+                        parsed_date: Some(Utc::now() - chrono::Duration::hours(1)),
+                        plain_text: Some("New content".to_string()),
+                    },
+                ],
+            },
+            Feed {
+                url: "https://example.com/feed2".to_string(),
+                title: "Feed Two".to_string(),
+                title_lower: "feed two".to_string(),
+                items: vec![FeedItem {
+                    title: "Another New".to_string(),
+                    title_lower: "another new".to_string(),
+                    link: Some("https://example.com/another".to_string()),
+                    description: Some("Another new content".to_string()),
+                    pub_date: None,
+                    author: Some("Author B".to_string()),
+                    formatted_date: None,
+                    parsed_date: Some(Utc::now() - chrono::Duration::hours(2)),
+                    plain_text: Some("Another new content".to_string()),
+                }],
+            },
+        ];
+        app.update_dashboard();
+        app
+    }
+
+    #[test]
+    fn test_get_new_items_since_session_no_session_time() {
+        let mut app = make_test_app();
+        app.last_session_time = None;
+        let items = app.get_new_items_since_session();
+        assert!(items.is_empty(), "No items when no session time is set");
+    }
+
+    #[test]
+    fn test_get_new_items_since_session_filters_by_date() {
+        let mut app = make_test_app();
+        // Set session time to 12 hours ago — should pick up items from last few hours
+        app.last_session_time = Some(Utc::now() - chrono::Duration::hours(12));
+        let items = app.get_new_items_since_session();
+        // "New Article" (1h ago) and "Another New" (2h ago) are newer than 12h ago
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn test_get_new_items_since_session_skips_no_date() {
+        let mut app = make_test_app();
+        app.last_session_time = Some(Utc::now() - chrono::Duration::hours(12));
+        // Remove parsed_date from one item
+        app.feeds[0].items[1].parsed_date = None;
+        let items = app.get_new_items_since_session();
+        // Only "Another New" from Feed Two should match
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].2, "Feed Two");
+    }
+
+    #[test]
+    fn test_get_summary_stats() {
+        let mut app = make_test_app();
+        app.last_session_time = Some(Utc::now() - chrono::Duration::hours(12));
+        let (total, feeds) = app.get_summary_stats();
+        assert_eq!(total, 2);
+        // Both feeds have 1 new item each
+        assert_eq!(feeds.len(), 2);
+        // Sorted by count descending (both have 1, so order is stable but either is fine)
+        assert!(feeds.iter().all(|(_, count)| *count == 1));
+    }
+
+    #[test]
+    fn test_get_summary_stats_sorting() {
+        let mut app = make_test_app();
+        // Set session time far in the past so all items with dates are "new"
+        app.last_session_time = Some(Utc::now() - chrono::Duration::days(365));
+        let (total, feeds) = app.get_summary_stats();
+        assert_eq!(total, 3);
+        // Feed One has 2 items, Feed Two has 1 — Feed One should be first
+        assert_eq!(feeds[0].0, "Feed One");
+        assert_eq!(feeds[0].1, 2);
+        assert_eq!(feeds[1].0, "Feed Two");
+        assert_eq!(feeds[1].1, 1);
+    }
+
+    #[test]
+    fn test_live_search_clamps_selection() {
+        let mut app = make_test_app();
+        // Start with selection beyond what search will return
+        app.selected_item = Some(100);
+        app.live_search("new");
+        // Should clamp to last result, not reset to 0
+        assert!(app.selected_item.is_some());
+        let sel = app.selected_item.unwrap();
+        assert!(sel < app.filtered_items.len());
+        assert_eq!(sel, app.filtered_items.len() - 1);
+    }
+
+    #[test]
+    fn test_live_search_preserves_valid_selection() {
+        let mut app = make_test_app();
+        app.selected_item = Some(0);
+        app.live_search("new");
+        // Selection 0 is valid, should stay
+        assert_eq!(app.selected_item, Some(0));
+    }
+
+    #[test]
+    fn test_live_search_sets_selection_when_none() {
+        let mut app = make_test_app();
+        app.selected_item = None;
+        app.live_search("new");
+        // Should set to 0 when there are results
+        assert_eq!(app.selected_item, Some(0));
+    }
+
+    #[test]
+    fn test_live_search_no_results() {
+        let mut app = make_test_app();
+        app.selected_item = Some(1);
+        app.live_search("zzzznonexistent");
+        // No results, selection should remain as-is (count == 0, match arm falls through)
+        assert_eq!(app.selected_item, Some(1));
+    }
+
+    #[test]
+    fn test_toggle_preview_pane() {
+        let mut app = make_test_app();
+        assert!(!app.preview_pane);
+        app.preview_scroll = 5;
+        app.preview_max_scroll = 10;
+
+        app.toggle_preview_pane();
+        assert!(app.preview_pane);
+        assert_eq!(app.preview_scroll, 0);
+        assert_eq!(app.preview_max_scroll, 0);
+
+        app.toggle_preview_pane();
+        assert!(!app.preview_pane);
+    }
+
+    #[test]
+    fn test_reset_preview_scroll() {
+        let mut app = make_test_app();
+        app.preview_scroll = 10;
+        app.preview_max_scroll = 20;
+
+        app.reset_preview_scroll();
+        assert_eq!(app.preview_scroll, 0);
+        assert_eq!(app.preview_max_scroll, 0);
+    }
+
+    #[test]
+    fn test_update_preview_max_scroll() {
+        let mut app = make_test_app();
+        app.update_preview_max_scroll(50, 20);
+        assert_eq!(app.preview_max_scroll, 30);
+
+        // Content fits in viewport
+        app.update_preview_max_scroll(10, 20);
+        assert_eq!(app.preview_max_scroll, 0);
+    }
+
+    #[test]
+    fn test_clamp_preview_scroll() {
+        let mut app = make_test_app();
+        app.preview_max_scroll = 10;
+        app.preview_scroll = 15;
+        app.clamp_preview_scroll();
+        assert_eq!(app.preview_scroll, 10);
+
+        // Already valid
+        app.preview_scroll = 5;
+        app.clamp_preview_scroll();
+        assert_eq!(app.preview_scroll, 5);
     }
 
     #[test]

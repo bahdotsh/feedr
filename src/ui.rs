@@ -270,6 +270,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         View::FeedItems => render_feed_items(f, app, chunks[1], &colors),
         View::FeedItemDetail => render_item_detail(f, app, chunks[1], &colors),
         View::CategoryManagement => render_category_management(f, app, chunks[1], &colors),
+        View::Summary => render_summary(f, app, chunks[1], &colors),
     }
 
     render_help_bar(f, app, chunks[2], &colors);
@@ -302,13 +303,21 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
 fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
     // Create tabs for navigation
-    let titles = ["Dashboard", "Feeds", "Items", "Detail", "Categories"];
+    let titles = [
+        "Dashboard",
+        "Feeds",
+        "Items",
+        "Detail",
+        "Categories",
+        "What's New",
+    ];
     let selected_tab = match app.view {
         View::Dashboard => 0,
         View::FeedList => 1,
         View::FeedItems => 2,
         View::FeedItemDetail => 3,
         View::CategoryManagement => 4,
+        View::Summary => 5,
     };
 
     // Theme-specific loading animation
@@ -377,7 +386,7 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
     f.render_widget(tabs, area);
 }
 
-fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
+fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, colors: &ColorScheme) {
     let search_icon = colors.get_icon_search();
     let mut title = if app.is_searching {
         format!(" {} Search Results: '{}' ", search_icon, app.search_query)
@@ -390,13 +399,19 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         title = format!("{} | {} Filtered", title, search_icon);
     }
 
-    // Use the filtered items when filters are active
-    let items_to_display = if app.is_searching {
+    // Determine which item list to use — borrow as a slice to avoid cloning
+    let items_to_display: &[(usize, usize)] = if app.is_searching {
         &app.filtered_items
     } else if app.filter_options.is_active() {
         &app.filtered_dashboard_items
     } else {
         &app.dashboard_items
+    };
+    // Copy the indices we need for the preview pane before borrowing app mutably
+    let preview_indices: Vec<(usize, usize)> = if app.preview_pane {
+        items_to_display.to_vec()
+    } else {
+        Vec::new()
     };
 
     if items_to_display.is_empty() {
@@ -683,6 +698,17 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
         })
         .collect();
 
+    // Split area for preview pane if active
+    let (list_area, preview_area) = if app.preview_pane {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let dashboard_list = List::new(items)
         .block(
             Block::default()
@@ -705,7 +731,165 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
     let mut state = ratatui::widgets::ListState::default();
     state.select(app.selected_item);
 
-    f.render_stateful_widget(dashboard_list, area, &mut state);
+    f.render_stateful_widget(dashboard_list, list_area, &mut state);
+
+    // Render preview pane
+    if let Some(preview_area) = preview_area {
+        render_preview_pane(f, app, preview_area, &preview_indices, colors);
+    }
+}
+
+fn render_preview_pane<B: Backend>(
+    f: &mut Frame<B>,
+    app: &mut App,
+    area: Rect,
+    items_to_display: &[(usize, usize)],
+    colors: &ColorScheme,
+) {
+    let selected = app.selected_item.unwrap_or(0);
+    let item_data = items_to_display
+        .get(selected)
+        .and_then(|&(feed_idx, item_idx)| {
+            app.feeds
+                .get(feed_idx)
+                .and_then(|feed| feed.items.get(item_idx).map(|item| (feed, item)))
+        });
+
+    let article_icon = colors.get_icon_article();
+
+    let Some((feed, item)) = item_data else {
+        let empty = Paragraph::new("No item selected")
+            .block(
+                Block::default()
+                    .title(format!(" {} Preview ", article_icon))
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(colors.border_normal)
+                    .border_style(Style::default().fg(colors.border))
+                    .style(Style::default().bg(colors.surface))
+                    .padding(Padding::new(2, 2, 1, 1)),
+            )
+            .style(Style::default().fg(colors.muted))
+            .alignment(Alignment::Center);
+        f.render_widget(empty, area);
+        return;
+    };
+
+    // Build preview content
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Title
+    lines.push(Line::from(vec![Span::styled(
+        &item.title,
+        Style::default()
+            .fg(colors.text)
+            .add_modifier(Modifier::BOLD),
+    )]));
+    lines.push(Line::from(""));
+
+    // Feed source
+    lines.push(Line::from(vec![Span::styled(
+        &feed.title,
+        Style::default()
+            .fg(colors.secondary)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    // Author and date
+    let mut meta_parts = Vec::new();
+    if let Some(author) = &item.author {
+        meta_parts.push(Span::styled(
+            author.as_str(),
+            Style::default()
+                .fg(colors.text_secondary)
+                .add_modifier(Modifier::ITALIC),
+        ));
+    }
+    if let Some(date) = &item.formatted_date {
+        if !meta_parts.is_empty() {
+            meta_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
+        }
+        meta_parts.push(Span::styled(
+            date.as_str(),
+            Style::default().fg(colors.muted),
+        ));
+    }
+    if !meta_parts.is_empty() {
+        lines.push(Line::from(meta_parts));
+    }
+
+    // Separator
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "─".repeat(area.width.saturating_sub(8) as usize),
+        Style::default().fg(colors.border),
+    )]));
+    lines.push(Line::from(""));
+
+    // Content
+    if let Some(desc) = &item.description {
+        let raw_text = from_read(desc.as_bytes(), area.width.saturating_sub(10) as usize);
+        let formatted = format_content_for_reading(&raw_text);
+        for line in formatted.lines() {
+            lines.push(Line::from(vec![Span::styled(
+                line.to_string(),
+                Style::default().fg(colors.text),
+            )]));
+        }
+    } else {
+        lines.push(Line::from(vec![Span::styled(
+            "No content available",
+            Style::default().fg(colors.muted),
+        )]));
+    }
+
+    let viewport_height = area
+        .height
+        .saturating_sub(2) // borders
+        .saturating_sub(2); // padding
+
+    // Account for line wrapping when calculating content height
+    let content_width = area
+        .width
+        .saturating_sub(2) // borders
+        .saturating_sub(4) // padding (2 left + 2 right)
+        as usize;
+    let content_text: String = lines
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content_lines = count_wrapped_lines(&content_text, content_width);
+
+    // Compute scroll locally to avoid mutable borrow while lines borrows app
+    let preview_max_scroll = content_lines.saturating_sub(viewport_height);
+    let preview_scroll = app.preview_scroll.min(preview_max_scroll);
+
+    let preview = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(format!(" {} Preview ", article_icon))
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(colors.border_normal)
+                .border_style(Style::default().fg(colors.border_focus))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 2, 1, 1)),
+        )
+        .scroll((preview_scroll, 0))
+        .wrap(Wrap { trim: true });
+
+    // Render consumes the Paragraph, releasing borrows into app
+    f.render_widget(preview, area);
+
+    // Now safe to update app scroll state
+    app.preview_max_scroll = preview_max_scroll;
+    app.preview_scroll = preview_scroll;
 }
 
 fn render_feed_list<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
@@ -1289,7 +1473,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                     if app.feeds.is_empty() {
                         "a: Add feed | t: Theme | q: Quit | CTRL+C: Manage categories"
                     } else {
-                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | a: Add feed | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
+                        "↑/↓: Navigate | ENTER: View | Space: Toggle read | p: Preview | a: Add feed | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
                     }
                 }
                 View::FeedList => {
@@ -1308,6 +1492,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                 View::FeedItemDetail => {
                     "h/esc: back | home: dashboard | ↑/↓: scroll | PgUp/PgDn: fast | Space: Toggle read | o: open | t: theme | q: quit"
                 }
+                View::Summary => "Press any key to continue to Dashboard | q: Quit"
             };
             (help_text, Style::default().fg(colors.text))
         }
@@ -1316,7 +1501,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
             Style::default().fg(colors.highlight),
         ),
         InputMode::SearchMode => (
-            "Enter search term (press ENTER to search)",
+            "Type to search (results update live) | ENTER: keep results | ESC: cancel",
             Style::default().fg(colors.highlight),
         ),
         InputMode::FilterMode => ("", Style::default().fg(colors.muted)),
@@ -1468,15 +1653,21 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
         };
         (
             "Add Feed URL",
-            "Enter the RSS feed URL and press Enter",
+            "Enter the RSS feed URL and press Enter".to_string(),
             link_icon,
         )
     } else {
-        (
-            "Search",
-            "Enter search terms and press Enter",
-            colors.get_icon_search(),
-        )
+        let result_count = app.filtered_items.len();
+        let search_help = if app.input.is_empty() {
+            "Type to search - results update live".to_string()
+        } else {
+            format!(
+                "{} result{} found",
+                result_count,
+                if result_count == 1 { "" } else { "s" }
+            )
+        };
+        ("Search", search_help, colors.get_icon_search())
     };
 
     // Create a modern input modal
@@ -1495,7 +1686,7 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
 
     // Add help text
     lines.push(Line::from(vec![Span::styled(
-        help_text,
+        help_text.clone(),
         Style::default().fg(colors.text_secondary),
     )]));
 
@@ -1914,6 +2105,80 @@ fn count_wrapped_lines(text: &str, width: usize) -> u16 {
     // If text doesn't end with newline, we still have the lines we counted
     // If text is empty, return at least 1 line
     line_count.max(1)
+}
+
+fn render_summary<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: &ColorScheme) {
+    let (total_new, feeds_with_counts) = app.get_summary_stats();
+    let feed_count = feeds_with_counts.len();
+
+    let summary_icon = if colors.border_normal == BorderType::Double {
+        "◈"
+    } else {
+        "✦"
+    };
+
+    let title = format!(
+        " {} What's New - {} new item{} across {} feed{} ",
+        summary_icon,
+        total_new,
+        if total_new == 1 { "" } else { "s" },
+        feed_count,
+        if feed_count == 1 { "" } else { "s" },
+    );
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        format!("  {} What's New Since Last Visit", summary_icon),
+        Style::default()
+            .fg(colors.primary)
+            .add_modifier(Modifier::BOLD),
+    )]));
+    lines.push(Line::from(""));
+
+    // Per-feed breakdown
+    let arrow = colors.get_arrow_right();
+    for (feed_name, count) in &feeds_with_counts {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} ", arrow),
+                Style::default().fg(colors.highlight),
+            ),
+            Span::styled(
+                feed_name.clone(),
+                Style::default()
+                    .fg(colors.text)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  {} new item{}", count, if *count == 1 { "" } else { "s" }),
+                Style::default().fg(colors.text_secondary),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "  Press any key to continue to Dashboard",
+        Style::default().fg(colors.muted),
+    )]));
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(title)
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(colors.border_normal)
+                .border_style(Style::default().fg(colors.border))
+                .style(Style::default().bg(colors.surface))
+                .padding(Padding::new(2, 2, 1, 1)),
+        )
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
 }
 
 // Update the render_category_management function to show feeds when a category is expanded
