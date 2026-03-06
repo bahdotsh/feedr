@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -53,6 +54,9 @@ pub struct UiConfig {
     /// Color theme (light or dark)
     #[serde(default)]
     pub theme: Theme,
+    /// Compact mode for small terminals (auto, always, never)
+    #[serde(default)]
+    pub compact_mode: CompactMode,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,11 +67,22 @@ pub enum Theme {
     Dark,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CompactMode {
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DefaultFeed {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
 }
 
 // Default value functions
@@ -121,6 +136,7 @@ impl Default for UiConfig {
             tick_rate: default_tick_rate(),
             error_display_timeout: default_error_timeout(),
             theme: Theme::default(),
+            compact_mode: CompactMode::default(),
         }
     }
 }
@@ -209,6 +225,7 @@ impl Config {
              #\n\
              # [ui]\n\
              # theme = \"light\"\n\
+             # compact_mode = \"auto\"  # auto (default), always, or never\n\
              #\n\
              # Example default feeds configuration:\n\
              # [[default_feeds]]\n\
@@ -217,7 +234,13 @@ impl Config {
              #\n\
              # [[default_feeds]]\n\
              # url = \"https://another-example.com/rss\"\n\
-             # category = \"Tech\"\n",
+             # category = \"Tech\"\n\
+             #\n\
+             # Authenticated feed example (custom HTTP headers):\n\
+             # [[default_feeds]]\n\
+             # url = \"https://private.example.com/feed.xml\"\n\
+             # [default_feeds.headers]\n\
+             # Authorization = \"Bearer your_token_here\"\n",
             toml
         )
     }
@@ -234,6 +257,26 @@ mod tests {
         assert_eq!(config.network.http_timeout, 15);
         assert_eq!(config.ui.tick_rate, 100);
         assert_eq!(config.ui.error_display_timeout, 3000);
+    }
+
+    #[test]
+    fn test_default_feed_with_headers() {
+        let toml_str = r#"
+            [[default_feeds]]
+            url = "https://example.com/feed.xml"
+
+            [[default_feeds]]
+            url = "https://private.example.com/feed.xml"
+            [default_feeds.headers]
+            Authorization = "Bearer token123"
+            X-Custom = "value"
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.default_feeds.len(), 2);
+        assert!(config.default_feeds[0].headers.is_none());
+        let headers = config.default_feeds[1].headers.as_ref().unwrap();
+        assert_eq!(headers.get("Authorization").unwrap(), "Bearer token123");
+        assert_eq!(headers.get("X-Custom").unwrap(), "value");
     }
 
     #[test]

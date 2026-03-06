@@ -53,6 +53,7 @@ fn spawn_feed_refresh(app: &mut App) -> (usize, mpsc::Receiver<(usize, Result<Fe
     if !app.bookmarks.is_empty() {
         let timeout = app.config.network.http_timeout;
         let user_agent = app.config.network.user_agent.clone();
+        let all_headers = app.feed_headers.clone();
 
         if let Ok(client) = Feed::build_client(timeout) {
             pending_count = app.bookmarks.len();
@@ -63,8 +64,10 @@ fn spawn_feed_refresh(app: &mut App) -> (usize, mpsc::Receiver<(usize, Result<Fe
                 let url = url.clone();
                 let ua = user_agent.clone();
                 let tx = feed_tx.clone();
+                let hdrs = all_headers.get(&url).cloned();
                 std::thread::spawn(move || {
-                    let result = Feed::from_url_with_client(&url, &client, Some(&ua));
+                    let result =
+                        Feed::from_url_with_client(&url, &client, Some(&ua), hdrs.as_ref());
                     let _ = tx.send((idx, result));
                 });
             }
@@ -83,7 +86,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
     let (mut pending_count, mut feed_rx) = spawn_feed_refresh(app);
 
     loop {
-        terminal.draw(|f| ui::render(f, app))?;
+        terminal.draw(|f| {
+            app.update_compact_mode(f.size().height);
+            ui::render(f, app);
+        })?;
 
         // Check if a refresh was requested (by 'r' key or auto-refresh)
         if app.refresh_requested {
@@ -191,6 +197,10 @@ fn handle_events(app: &mut App) -> Result<bool> {
         if app.error.is_some() {
             app.error = None;
             return Ok(false);
+        }
+        // Ctrl+Q quits from any view
+        if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Ok(true);
         }
         match app.input_mode {
             InputMode::Normal => match app.view {
@@ -432,7 +442,10 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     _ => {}
                 },
                 View::FeedList => match key.code {
-                    KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('q') => {
+                        app.view = View::Dashboard;
+                        app.selected_item = None;
+                    }
                     KeyCode::Tab => {
                         if key.modifiers.contains(event::KeyModifiers::SHIFT) {
                             app.view = View::Dashboard;
@@ -523,7 +536,10 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     _ => {}
                 },
                 View::FeedItems => match key.code {
-                    KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('q') => {
+                        app.view = View::FeedList;
+                        app.selected_item = None;
+                    }
                     KeyCode::Esc | KeyCode::Char('h') | KeyCode::Backspace => {
                         app.view = View::FeedList;
                         app.selected_item = None;
@@ -627,7 +643,14 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     _ => {}
                 },
                 View::FeedItemDetail => match key.code {
-                    KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('q') => {
+                        if app.is_searching {
+                            app.exit_detail_view(View::Dashboard);
+                            app.selected_item = Some(0);
+                        } else {
+                            app.exit_detail_view(View::FeedItems);
+                        }
+                    }
                     KeyCode::Char('s') => {
                         if let Some(feed_idx) = app.selected_feed {
                             if let Some(item_idx) = app.selected_item {
@@ -737,7 +760,10 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     _ => {}
                 },
                 View::Starred => match key.code {
-                    KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('q') => {
+                        app.view = View::Dashboard;
+                        app.selected_item = None;
+                    }
                     KeyCode::Tab => {
                         if key.modifiers.contains(event::KeyModifiers::SHIFT) {
                             app.view = View::FeedList;
@@ -860,7 +886,10 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     _ => {}
                 },
                 View::Summary => match key.code {
-                    KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('q') => {
+                        app.view = View::Dashboard;
+                        app.selected_item = Some(0);
+                    }
                     _ => {
                         // Any key dismisses the summary
                         app.view = View::Dashboard;

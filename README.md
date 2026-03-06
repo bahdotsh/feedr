@@ -26,6 +26,8 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 - **Rate Limiting**: Per-domain request throttling prevents "too many requests" errors (ideal for Reddit feeds)
 - **Vim-Style Navigation**: Use `j`/`k` alongside arrow keys for navigation
 - **Rich Content Display**: HTML-to-text conversion with clean article formatting
+- **Authenticated Feeds**: Support for custom HTTP headers per feed (e.g., `Authorization: Bearer ...`) for private/authenticated RSS feeds
+- **Compact Mode**: Automatic compact layout for small terminals (≤30 rows), with manual `always`/`never` override in config
 - **Configurable**: Customize timeouts, themes, UI behavior, and default feeds via TOML config
 - **XDG Compliant**: Follows standard directory specifications for configuration and data storage
 
@@ -87,7 +89,8 @@ feedr --import feeds.opml
 |-----|--------|
 | `Tab` | Cycle forward through views |
 | `Shift+Tab` | Cycle backward through views |
-| `q` | Quit application |
+| `q` | Go back (quit from Dashboard) |
+| `Ctrl+Q` | Quit from any view |
 | `r` | Refresh all feeds |
 | `t` | Toggle dark/light theme |
 | `/` | Search mode |
@@ -109,7 +112,7 @@ feedr --import feeds.opml
 #### Feed List View
 | Key | Action |
 |-----|--------|
-| `h` / `Esc` | Go to dashboard |
+| `q` / `h` / `Esc` | Go to dashboard |
 | `↑/↓` or `k/j` | Navigate feeds |
 | `Enter` | View feed items |
 | `a` | Add a new feed |
@@ -118,7 +121,7 @@ feedr --import feeds.opml
 #### Feed Items View
 | Key | Action |
 |-----|--------|
-| `h` / `Esc` / `Backspace` | Back to feeds list |
+| `q` / `h` / `Esc` / `Backspace` | Back to feeds list |
 | `Home` | Go to dashboard |
 | `↑/↓` or `k/j` | Navigate items |
 | `Enter` | View item details |
@@ -129,7 +132,7 @@ feedr --import feeds.opml
 #### Item Detail View
 | Key | Action |
 |-----|--------|
-| `h` / `Esc` / `Backspace` | Back to feed items |
+| `q` / `h` / `Esc` / `Backspace` | Back to feed items |
 | `↑/↓` or `u/d` | Scroll content |
 | `Page Up` / `Page Down` | Scroll content (page) |
 | `g` | Jump to top |
@@ -187,11 +190,18 @@ user_agent = "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/f
 tick_rate = 100                # UI update rate in milliseconds
 error_display_timeout = 3000   # Error message duration in milliseconds
 theme = "dark"                 # Theme: "dark" (cyberpunk) or "light" (zen)
+compact_mode = "auto"          # Compact layout: "auto", "always", or "never"
 
 # Optional: Define default feeds to load on first run
 [[default_feeds]]
 url = "https://example.com/feed.xml"
 category = "News"
+
+# Authenticated feed with custom HTTP headers
+[[default_feeds]]
+url = "https://private.example.com/feed.xml"
+[default_feeds.headers]
+Authorization = "Bearer your_token_here"
 ```
 
 ### Configuration Options Explained
@@ -210,6 +220,7 @@ category = "News"
 - **tick_rate**: How frequently the UI updates in milliseconds (lower = more responsive, higher = less CPU usage)
 - **error_display_timeout**: How long error messages are displayed in milliseconds
 - **theme**: Choose between `"dark"` (cyberpunk aesthetic with neon colors) or `"light"` (zen minimalist with organic colors). Can also be toggled at runtime with `t`.
+- **compact_mode**: Controls the compact layout for small terminals. `"auto"` (default) enables compact mode when terminal height is ≤30 rows, `"always"` forces compact mode, and `"never"` disables it. Compact mode uses single-line items, a minimal title bar, and an abbreviated help bar to maximize screen real estate.
 
 #### Background Refresh Example
 To enable automatic refresh every 5 minutes with rate limiting:
@@ -233,6 +244,22 @@ category = "Tech"
 url = "https://example.com/feed.xml"
 category = "News"
 ```
+
+#### Authenticated Feeds
+Some RSS feeds require authentication or custom HTTP headers. You can configure per-feed headers:
+```toml
+[[default_feeds]]
+url = "https://private.example.com/feed.xml"
+[default_feeds.headers]
+Authorization = "Bearer your_api_token"
+
+[[default_feeds]]
+url = "https://another-api.example.com/rss"
+[default_feeds.headers]
+X-API-Key = "your_api_key"
+Cookie = "session=abc123"
+```
+Headers are sent with every request for that feed, including refreshes.
 
 ### Data Storage
 

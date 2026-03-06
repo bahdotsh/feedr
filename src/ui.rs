@@ -8,7 +8,6 @@ use ratatui::{
     symbols::{self},
     text::{Line, Span, Text},
     widgets::{
-        canvas::{Canvas, Rectangle},
         Block, BorderType, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Tabs,
         Wrap,
     },
@@ -251,18 +250,34 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let bg_block = Block::default().style(Style::default().bg(colors.background));
     f.render_widget(bg_block, f.size());
 
-    // Main layout division with better spacing
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(4), // Title/tab bar (slightly taller)
-            Constraint::Min(0),    // Main content
-            Constraint::Length(4), // Help bar (slightly taller for breathing room)
-        ])
-        .split(f.size());
+    // Main layout division — compact mode uses tighter spacing
+    let chunks = if app.compact {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .margin(0)
+            .constraints([
+                Constraint::Length(1), // Compact title bar
+                Constraint::Min(0),    // Main content
+                Constraint::Length(1), // Compact help bar
+            ])
+            .split(f.size())
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(4), // Title/tab bar (slightly taller)
+                Constraint::Min(0),    // Main content
+                Constraint::Length(4), // Help bar (slightly taller for breathing room)
+            ])
+            .split(f.size())
+    };
 
-    render_title_bar(f, app, chunks[0], &colors);
+    if app.compact {
+        render_compact_title_bar(f, app, chunks[0], &colors);
+    } else {
+        render_title_bar(f, app, chunks[0], &colors);
+    }
 
     match app.view {
         View::Dashboard => render_dashboard(f, app, chunks[1], &colors),
@@ -274,7 +289,11 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         View::Summary => render_summary(f, app, chunks[1], &colors),
     }
 
-    render_help_bar(f, app, chunks[2], &colors);
+    if app.compact {
+        render_compact_help_bar(f, app, chunks[2], &colors);
+    } else {
+        render_help_bar(f, app, chunks[2], &colors);
+    }
 
     // Show error if present
     if let Some(error) = &app.error {
@@ -387,6 +406,44 @@ fn render_title_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors:
     .divider(symbols::line::VERTICAL);
 
     f.render_widget(tabs, area);
+}
+
+fn render_compact_title_bar<B: Backend>(
+    f: &mut Frame<B>,
+    app: &App,
+    area: Rect,
+    colors: &ColorScheme,
+) {
+    let view_name = match app.view {
+        View::Dashboard => "Dashboard",
+        View::FeedList => "Feeds",
+        View::FeedItems => "Items",
+        View::FeedItemDetail => "Detail",
+        View::CategoryManagement => "Categories",
+        View::Starred => "Starred",
+        View::Summary => "What's New",
+    };
+
+    let title = if app.is_loading {
+        let frames = colors.get_loading_frames();
+        format!(
+            " Feedr > {} {} ",
+            view_name,
+            frames[app.loading_indicator % frames.len()]
+        )
+    } else {
+        format!(" Feedr > {} ", view_name)
+    };
+
+    let bar = Paragraph::new(Line::from(vec![Span::styled(
+        title,
+        Style::default()
+            .fg(colors.primary)
+            .add_modifier(Modifier::BOLD)
+            .bg(colors.surface),
+    )]))
+    .style(Style::default().bg(colors.surface));
+    f.render_widget(bar, area);
 }
 
 fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, colors: &ColorScheme) {
@@ -620,6 +677,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
     // For non-empty dashboard, create richly formatted items with theme-specific styling
     let arrow = colors.get_arrow_right();
     let success_icon = colors.get_icon_success();
+    let is_compact = app.compact;
     let items: Vec<ListItem> = items_to_display
         .iter()
         .enumerate()
@@ -635,10 +693,9 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
             let is_read = app.is_item_read(feed_idx, item_idx);
             let is_starred = app.is_item_starred(feed_idx, item_idx);
 
-            // Create clearer visual group with theme-specific hierarchy
-            ListItem::new(vec![
-                // Feed source with theme-specific indicator
-                Line::from(vec![
+            if is_compact {
+                // Compact: single line per item
+                ListItem::new(Line::from(vec![
                     Span::styled(
                         if is_selected {
                             format!("{} ", arrow)
@@ -648,66 +705,101 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
                         Style::default().fg(colors.highlight),
                     ),
                     Span::styled(
-                        feed.title.to_string(),
+                        format!("{} | ", feed.title),
                         Style::default()
-                            .fg(if is_selected {
-                                colors.secondary
-                            } else {
-                                colors.text_secondary
-                            })
+                            .fg(colors.text_secondary)
                             .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        &item.title,
+                        Style::default().fg(if is_read { colors.muted } else { colors.text }),
                     ),
                     Span::styled(
                         if is_starred { " \u{2605}" } else { "" },
                         Style::default().fg(Color::Rgb(255, 215, 0)),
                     ),
-                    Span::styled(
-                        if is_read {
-                            format!(" {}", success_icon)
-                        } else {
-                            "".to_string()
-                        },
-                        Style::default().fg(colors.success),
-                    ),
-                ]),
-                // Item title - cleaner layout
-                Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(
-                        &item.title,
-                        Style::default()
-                            .fg(if is_selected {
-                                colors.text
-                            } else if is_read {
-                                colors.text_secondary
-                            } else {
-                                colors.text
-                            })
-                            .add_modifier(if is_selected {
-                                Modifier::BOLD
-                            } else {
-                                Modifier::empty()
-                            }),
-                    ),
-                ]),
-                // Publication date with subtle styling
-                Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(date_str, Style::default().fg(colors.muted)),
-                ]),
-                // Spacing between items
-                Line::from(""),
-            ])
-            .style(Style::default().fg(colors.text).bg(if is_selected {
-                colors.selected_bg
+                    Span::styled(format!("  {}", date_str), Style::default().fg(colors.muted)),
+                ]))
+                .style(Style::default().fg(colors.text).bg(if is_selected {
+                    colors.selected_bg
+                } else {
+                    colors.background
+                }))
             } else {
-                colors.background
-            }))
+                // Create clearer visual group with theme-specific hierarchy
+                ListItem::new(vec![
+                    // Feed source with theme-specific indicator
+                    Line::from(vec![
+                        Span::styled(
+                            if is_selected {
+                                format!("{} ", arrow)
+                            } else {
+                                "  ".to_string()
+                            },
+                            Style::default().fg(colors.highlight),
+                        ),
+                        Span::styled(
+                            feed.title.to_string(),
+                            Style::default()
+                                .fg(if is_selected {
+                                    colors.secondary
+                                } else {
+                                    colors.text_secondary
+                                })
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            if is_starred { " \u{2605}" } else { "" },
+                            Style::default().fg(Color::Rgb(255, 215, 0)),
+                        ),
+                        Span::styled(
+                            if is_read {
+                                format!(" {}", success_icon)
+                            } else {
+                                "".to_string()
+                            },
+                            Style::default().fg(colors.success),
+                        ),
+                    ]),
+                    // Item title - cleaner layout
+                    Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(
+                            &item.title,
+                            Style::default()
+                                .fg(if is_selected {
+                                    colors.text
+                                } else if is_read {
+                                    colors.text_secondary
+                                } else {
+                                    colors.text
+                                })
+                                .add_modifier(if is_selected {
+                                    Modifier::BOLD
+                                } else {
+                                    Modifier::empty()
+                                }),
+                        ),
+                    ]),
+                    // Publication date with subtle styling
+                    Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(date_str, Style::default().fg(colors.muted)),
+                    ]),
+                    // Spacing between items
+                    Line::from(""),
+                ])
+                .style(Style::default().fg(colors.text).bg(if is_selected {
+                    colors.selected_bg
+                } else {
+                    colors.background
+                }))
+            }
         })
         .collect();
 
-    // Split area for preview pane if active
-    let (list_area, preview_area) = if app.preview_pane {
+    // Split area for preview pane if active (disabled in compact mode)
+    let (list_area, preview_area) = if app.preview_pane && !app.compact {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
@@ -1631,31 +1723,31 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
             let help_text = match app.view {
                 View::Dashboard => {
                     if app.feeds.is_empty() {
-                        "a: Add feed | t: Theme | q: Quit | CTRL+C: Manage categories"
+                        "a: Add feed | t: Theme | q: Quit | Ctrl+Q: Quit | CTRL+C: Manage categories"
                     } else {
-                        "\u{2191}/\u{2193}: Navigate | ENTER: View | s: Star | Space: Toggle read | p: Preview | a: Add | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit"
+                        "\u{2191}/\u{2193}: Navigate | ENTER: View | s: Star | Space: Toggle read | p: Preview | a: Add | r: Refresh | f: Filter | /: Search | t: Theme | q: Quit | Ctrl+Q: Quit"
                     }
                 }
                 View::FeedList => {
                     if app.feeds.is_empty() {
-                        "a: Add feed | t: Theme | q: Quit | TAB: Dashboard | CTRL+C: Categories"
+                        "a: Add feed | t: Theme | q: Back | Ctrl+Q: Quit | TAB: Dashboard | CTRL+C: Categories"
                     } else {
-                        "a: Add feed | c: Assign to category | DEL: Remove feed | ENTER: Open | t: Theme | q: Quit | CTRL+C: Categories"
+                        "a: Add feed | c: Assign to category | DEL: Remove feed | ENTER: Open | t: Theme | q: Back | Ctrl+Q: Quit | CTRL+C: Categories"
                     }
                 }
                 View::CategoryManagement => {
                     "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | t: Theme | ESC/q: Back"
                 }
                 View::FeedItems => {
-                    "h/esc: back | home: dashboard | enter: view | s: Star | Space: Toggle read | o: open | /: search | t: theme | q: quit"
+                    "h/esc/q: back | home: dashboard | enter: view | s: Star | Space: Toggle read | o: open | /: search | t: theme | Ctrl+Q: quit"
                 }
                 View::FeedItemDetail => {
-                    "h/esc: back | home: dashboard | \u{2191}/\u{2193}: scroll | PgUp/PgDn: fast | s: Star | Space: Toggle read | o: open | t: theme | q: quit"
+                    "h/esc/q: back | home: dashboard | \u{2191}/\u{2193}: scroll | PgUp/PgDn: fast | s: Star | Space: Toggle read | o: open | t: theme | Ctrl+Q: quit"
                 }
                 View::Starred => {
-                    "\u{2191}/\u{2193}: Navigate | ENTER: View | s: Unstar | Space: Toggle read | o: Open | Tab: Switch view | q: Quit"
+                    "\u{2191}/\u{2193}: Navigate | ENTER: View | s: Unstar | Space: Toggle read | o: Open | Tab: Switch view | q: Back | Ctrl+Q: Quit"
                 }
-                View::Summary => "Press any key to continue to Dashboard | q: Quit"
+                View::Summary => "Press any key to continue to Dashboard | q: Back | Ctrl+Q: Quit"
             };
             (help_text, Style::default().fg(colors.text))
         }
@@ -1726,8 +1818,58 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
     }
 }
 
+fn render_compact_help_bar<B: Backend>(
+    f: &mut Frame<B>,
+    app: &App,
+    area: Rect,
+    colors: &ColorScheme,
+) {
+    if !matches!(app.input_mode, InputMode::Normal) {
+        return;
+    }
+
+    let help_text = match app.view {
+        View::Dashboard => "q:quit a:add r:refresh /:search f:filter p:preview",
+        View::FeedList => "q:back a:add enter:open d:del c:category",
+        View::FeedItems => "q:back enter:view o:open s:star /:search",
+        View::FeedItemDetail => "q:back j/k:scroll o:open s:star space:read",
+        View::CategoryManagement => "q:back n:new e:edit d:del",
+        View::Starred => "q:back enter:view s:unstar o:open",
+        View::Summary => "any key:continue",
+    };
+
+    let spans: Vec<Span> = help_text
+        .split(' ')
+        .enumerate()
+        .flat_map(|(i, part)| {
+            let mut result = Vec::new();
+            if i > 0 {
+                result.push(Span::styled(" ", Style::default().fg(colors.border)));
+            }
+            if let Some(pos) = part.find(':') {
+                let (key, desc) = part.split_at(pos + 1);
+                result.push(Span::styled(
+                    key,
+                    Style::default()
+                        .fg(colors.highlight)
+                        .add_modifier(Modifier::BOLD),
+                ));
+                result.push(Span::styled(desc, Style::default().fg(colors.text)));
+            } else {
+                result.push(Span::styled(part, Style::default().fg(colors.text)));
+            }
+            result
+        })
+        .collect();
+
+    let help = Paragraph::new(Line::from(spans))
+        .alignment(Alignment::Center)
+        .style(Style::default().bg(colors.surface));
+    f.render_widget(help, area);
+}
+
 fn render_error_modal<B: Backend>(f: &mut Frame<B>, error: &str, colors: &ColorScheme) {
-    let area = centered_rect(60, 30, f.size());
+    let area = centered_rect_with_min(60, 30, 40, 8, f.size());
 
     // Clear the background
     f.render_widget(Clear, area);
@@ -1802,7 +1944,7 @@ fn render_success_notification<B: Backend>(f: &mut Frame<B>, message: &str, colo
 }
 
 fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
-    let area = centered_rect(70, 25, f.size());
+    let area = centered_rect_with_min(70, 25, 50, 12, f.size());
 
     // Clear the background
     f.render_widget(Clear, area);
@@ -1904,7 +2046,7 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
 }
 
 fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
-    let area = centered_rect(70, 60, f.size());
+    let area = centered_rect_with_min(70, 60, 50, 18, f.size());
 
     // Clear the area
     f.render_widget(Clear, area);
@@ -2113,40 +2255,15 @@ fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSc
     f.render_widget(filter_paragraph, area);
 }
 
-// Helper function to create a centered rect using up certain percentage of the available rect
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    // Create padding effect with backdrop
-    let _ = Canvas::default()
-        .paint(|ctx| {
-            ctx.draw(&Rectangle {
-                x: 0.0,
-                y: 0.0,
-                width: r.width as f64,
-                height: r.height as f64,
-                color: Color::Rgb(0, 0, 0),
-            });
-        })
-        .x_bounds([0.0, r.width as f64])
-        .y_bounds([0.0, r.height as f64]);
-
-    // Calculate popup dimensions
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
+// Helper function to create a centered rect with minimum dimensions
+fn centered_rect_with_min(percent_x: u16, percent_y: u16, min_w: u16, min_h: u16, r: Rect) -> Rect {
+    let pct_w = r.width * percent_x / 100;
+    let pct_h = r.height * percent_y / 100;
+    let w = pct_w.max(min_w).min(r.width);
+    let h = pct_h.max(min_h).min(r.height);
+    let x = r.x + (r.width.saturating_sub(w)) / 2;
+    let y = r.y + (r.height.saturating_sub(h)) / 2;
+    Rect::new(x, y, w, h)
 }
 
 // Helper function to truncate a URL for display
@@ -2548,7 +2665,7 @@ fn render_category_management<B: Backend>(
 
 // Add a new function to render the category name input modal
 fn render_category_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
-    let area = centered_rect(60, 20, f.size());
+    let area = centered_rect_with_min(60, 20, 40, 8, f.size());
 
     // Clear the area behind the modal
     f.render_widget(Clear, area);

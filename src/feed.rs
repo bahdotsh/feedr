@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -77,12 +77,12 @@ impl FeedCategory {
 impl Feed {
     /// Fetch and parse a feed from a URL with default timeout
     pub fn from_url(url: &str) -> Result<Self> {
-        Self::from_url_with_config(url, 15, None)
+        Self::from_url_with_config(url, 15, None, None)
     }
 
     /// Fetch and parse a feed from a URL with custom timeout
     pub fn from_url_with_timeout(url: &str, timeout_secs: u64) -> Result<Self> {
-        Self::from_url_with_config(url, timeout_secs, None)
+        Self::from_url_with_config(url, timeout_secs, None, None)
     }
 
     /// Fetch and parse a feed from a URL with custom timeout and user agent
@@ -90,9 +90,10 @@ impl Feed {
         url: &str,
         timeout_secs: u64,
         user_agent: Option<&str>,
+        custom_headers: Option<&HashMap<String, String>>,
     ) -> Result<Self> {
         let client = Self::build_client(timeout_secs)?;
-        Self::from_url_with_client(url, &client, user_agent)
+        Self::from_url_with_client(url, &client, user_agent, custom_headers)
     }
 
     /// Build a shared HTTP client with the given timeout
@@ -109,12 +110,13 @@ impl Feed {
         url: &str,
         client: &reqwest::blocking::Client,
         user_agent: Option<&str>,
+        custom_headers: Option<&HashMap<String, String>>,
     ) -> Result<Self> {
         let default_user_agent =
             "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)";
         let ua = user_agent.unwrap_or(default_user_agent);
 
-        let response = client
+        let mut request = client
             .get(url)
             .header("User-Agent", ua)
             .header(
@@ -124,9 +126,15 @@ impl Feed {
             .header("Accept-Language", "en-US,en;q=0.9")
             .header("Accept-Encoding", "gzip, deflate")
             .header("Cache-Control", "no-cache")
-            .header("Connection", "keep-alive")
-            .send()
-            .context("Failed to fetch feed")?;
+            .header("Connection", "keep-alive");
+
+        if let Some(headers) = custom_headers {
+            for (key, value) in headers {
+                request = request.header(key, value);
+            }
+        }
+
+        let response = request.send().context("Failed to fetch feed")?;
 
         // Check if we got redirected or have an unusual status
         let final_url = response.url().clone();

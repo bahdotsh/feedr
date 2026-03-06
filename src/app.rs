@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{CompactMode, Config};
 use crate::feed::{Feed, FeedCategory, FeedItem};
 use crate::ui::ColorScheme;
 use anyhow::Result;
@@ -105,6 +105,8 @@ pub struct App {
     pub preview_pane: bool,        // Whether to show article preview pane
     pub preview_scroll: u16,       // Vertical scroll for preview pane
     pub preview_max_scroll: u16,   // Maximum scroll for preview content
+    pub feed_headers: HashMap<String, HashMap<String, String>>, // Per-URL custom HTTP headers
+    pub compact: bool,             // Whether compact mode is active
 }
 
 #[derive(Clone, Debug)]
@@ -149,6 +151,13 @@ impl App {
 
         let has_bookmarks = !saved_data.bookmarks.is_empty();
         let color_scheme = ColorScheme::from_theme(&config.ui.theme);
+
+        // Build per-URL headers lookup from config
+        let feed_headers: HashMap<String, HashMap<String, String>> = config
+            .default_feeds
+            .iter()
+            .filter_map(|f| f.headers.as_ref().map(|h| (f.url.clone(), h.clone())))
+            .collect();
 
         // Parse last session time from saved data
         let last_session_time = saved_data
@@ -197,11 +206,21 @@ impl App {
             preview_pane: false,
             preview_scroll: 0,
             preview_max_scroll: 0,
+            feed_headers,
+            compact: false,
         };
 
         app.update_dashboard();
 
         app
+    }
+
+    pub fn update_compact_mode(&mut self, terminal_height: u16) {
+        self.compact = match self.config.ui.compact_mode {
+            CompactMode::Always => true,
+            CompactMode::Never => false,
+            CompactMode::Auto => terminal_height <= 30,
+        };
     }
 
     pub fn load_bookmarked_feeds(&mut self) {
@@ -226,7 +245,10 @@ impl App {
                 let client = client.clone();
                 let url = url.clone();
                 let ua = user_agent.clone();
-                std::thread::spawn(move || Feed::from_url_with_client(&url, &client, Some(&ua)))
+                let hdrs = self.feed_headers.get(&url).cloned();
+                std::thread::spawn(move || {
+                    Feed::from_url_with_client(&url, &client, Some(&ua), hdrs.as_ref())
+                })
             })
             .collect();
 
@@ -563,7 +585,8 @@ impl App {
     pub fn add_feed(&mut self, url: &str) -> Result<()> {
         let timeout = self.config.network.http_timeout;
         let user_agent = &self.config.network.user_agent;
-        let feed = Feed::from_url_with_config(url, timeout, Some(user_agent))?;
+        let headers = self.feed_headers.get(url);
+        let feed = Feed::from_url_with_config(url, timeout, Some(user_agent), headers)?;
         self.feeds.push(feed);
         if !self.bookmarks.contains(&url.to_string()) {
             self.bookmarks.push(url.to_string());
@@ -762,6 +785,9 @@ impl App {
             }
         };
 
+        // Clone headers map for use in threads
+        let all_headers = self.feed_headers.clone();
+
         // Spawn one thread per domain group — domains fetch in parallel,
         // feeds within the same domain fetch sequentially (rate limiting)
         let handles: Vec<_> = domain_groups
@@ -771,6 +797,7 @@ impl App {
                 let ua = user_agent.clone();
                 let delay = domain_delays.get(&domain).copied().unwrap_or_default();
                 let rate_limit = std::time::Duration::from_millis(rate_limit_delay);
+                let hdrs = all_headers.clone();
 
                 std::thread::spawn(move || {
                     if !delay.is_zero() {
@@ -785,7 +812,7 @@ impl App {
                         }
                         results.push((
                             url.clone(),
-                            Feed::from_url_with_client(url, &client, Some(&ua)),
+                            Feed::from_url_with_client(url, &client, Some(&ua), hdrs.get(url)),
                         ));
                     }
                     (domain, results)
