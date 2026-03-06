@@ -152,11 +152,7 @@ impl App {
         // Seed bookmarks from default_feeds if no saved bookmarks exist
         let mut bookmarks = saved_data.bookmarks;
         if bookmarks.is_empty() && !config.default_feeds.is_empty() {
-            bookmarks = config
-                .default_feeds
-                .iter()
-                .map(|f| f.url.clone())
-                .collect();
+            bookmarks = config.default_feeds.iter().map(|f| f.url.clone()).collect();
         }
 
         let has_bookmarks = !bookmarks.is_empty();
