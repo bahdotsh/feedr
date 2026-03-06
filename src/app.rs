@@ -149,7 +149,13 @@ impl App {
             last_session_time: None,
         });
 
-        let has_bookmarks = !saved_data.bookmarks.is_empty();
+        // Seed bookmarks from default_feeds if no saved bookmarks exist
+        let mut bookmarks = saved_data.bookmarks;
+        if bookmarks.is_empty() && !config.default_feeds.is_empty() {
+            bookmarks = config.default_feeds.iter().map(|f| f.url.clone()).collect();
+        }
+
+        let has_bookmarks = !bookmarks.is_empty();
         let color_scheme = ColorScheme::from_theme(&config.ui.theme);
 
         // Build per-URL headers lookup from config
@@ -171,7 +177,7 @@ impl App {
         let mut app = Self {
             config,
             feeds: Vec::new(),
-            bookmarks: saved_data.bookmarks,
+            bookmarks,
             categories: saved_data.categories,
             selected_category: None,
             input: String::new(),
