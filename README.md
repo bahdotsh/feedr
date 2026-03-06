@@ -28,6 +28,7 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 - **Rich Content Display**: HTML-to-text conversion with clean article formatting
 - **Authenticated Feeds**: Support for custom HTTP headers per feed (e.g., `Authorization: Bearer ...`) for private/authenticated RSS feeds
 - **Compact Mode**: Automatic compact layout for small terminals (≤30 rows), with manual `always`/`never` override in config
+- **CLI Config Management**: Get, set, and list configuration from the command line (`feedr config`), or use the interactive TUI config editor (`feedr config --tui`)
 - **Configurable**: Customize timeouts, themes, UI behavior, and default feeds via TOML config
 - **XDG Compliant**: Follows standard directory specifications for configuration and data storage
 
@@ -73,6 +74,18 @@ Import feeds from an OPML file:
 ```bash
 feedr --import feeds.opml
 ```
+
+### Configuration Management
+
+View and modify settings from the command line:
+```bash
+feedr config list                      # List all settings with current values
+feedr config get ui.theme              # Get a single value
+feedr config set ui.theme light        # Set a value (with validation)
+feedr config --tui                     # Open interactive TUI config editor
+```
+
+Available config keys use dot-notation (e.g. `general.max_dashboard_items`, `network.http_timeout`, `ui.theme`, `ui.compact_mode`). Run `feedr config list` to see all keys. Feed management (`default_feeds`) is only available through the TUI editor.
 
 ### Quick Start
 1. When you open Feedr for the first time, press `a` to add a feed
@@ -162,7 +175,7 @@ feedr --import feeds.opml
 
 ## Configuration
 
-Feedr supports customization through a TOML configuration file that follows XDG Base Directory specifications.
+Feedr supports customization through a TOML configuration file that follows XDG Base Directory specifications. You can edit the file directly, use `feedr config get/set` from the command line, or use `feedr config --tui` for an interactive editor.
 
 ### Configuration File Location
 

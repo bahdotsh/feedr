@@ -1,6 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -141,7 +142,127 @@ impl Default for UiConfig {
     }
 }
 
+impl fmt::Display for Theme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Theme::Light => write!(f, "light"),
+            Theme::Dark => write!(f, "dark"),
+        }
+    }
+}
+
+impl fmt::Display for CompactMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompactMode::Auto => write!(f, "auto"),
+            CompactMode::Always => write!(f, "always"),
+            CompactMode::Never => write!(f, "never"),
+        }
+    }
+}
+
 impl Config {
+    /// Get a config value by dot-notation key
+    pub fn get_value(&self, key: &str) -> Result<String> {
+        match key {
+            "general.max_dashboard_items" => Ok(self.general.max_dashboard_items.to_string()),
+            "general.auto_refresh_interval" => {
+                Ok(self.general.auto_refresh_interval.to_string())
+            }
+            "general.refresh_enabled" => Ok(self.general.refresh_enabled.to_string()),
+            "general.refresh_rate_limit_delay" => {
+                Ok(self.general.refresh_rate_limit_delay.to_string())
+            }
+            "network.http_timeout" => Ok(self.network.http_timeout.to_string()),
+            "network.user_agent" => Ok(self.network.user_agent.clone()),
+            "ui.tick_rate" => Ok(self.ui.tick_rate.to_string()),
+            "ui.error_display_timeout" => Ok(self.ui.error_display_timeout.to_string()),
+            "ui.theme" => Ok(self.ui.theme.to_string()),
+            "ui.compact_mode" => Ok(self.ui.compact_mode.to_string()),
+            k if k.starts_with("default_feeds") => {
+                bail!("Feed management is not supported via CLI. Use 'feedr config --tui' instead.")
+            }
+            _ => bail!("Unknown config key: {}", key),
+        }
+    }
+
+    /// Validate and set a config value by dot-notation key
+    pub fn validate_and_set(&mut self, key: &str, value: &str) -> Result<()> {
+        match key {
+            "general.max_dashboard_items" => {
+                let v: usize = value.parse().context("Expected a positive integer")?;
+                if !(1..=10000).contains(&v) {
+                    bail!("Value must be between 1 and 10000");
+                }
+                self.general.max_dashboard_items = v;
+            }
+            "general.auto_refresh_interval" => {
+                let v: u64 = value.parse().context("Expected a non-negative integer")?;
+                if v > 86400 {
+                    bail!("Value must be between 0 and 86400");
+                }
+                self.general.auto_refresh_interval = v;
+            }
+            "general.refresh_enabled" => {
+                let v: bool = value.parse().context("Expected 'true' or 'false'")?;
+                self.general.refresh_enabled = v;
+            }
+            "general.refresh_rate_limit_delay" => {
+                let v: u64 = value.parse().context("Expected a non-negative integer")?;
+                if v > 60000 {
+                    bail!("Value must be between 0 and 60000");
+                }
+                self.general.refresh_rate_limit_delay = v;
+            }
+            "network.http_timeout" => {
+                let v: u64 = value.parse().context("Expected a positive integer")?;
+                if !(1..=300).contains(&v) {
+                    bail!("Value must be between 1 and 300");
+                }
+                self.network.http_timeout = v;
+            }
+            "network.user_agent" => {
+                if value.is_empty() {
+                    bail!("User agent cannot be empty");
+                }
+                self.network.user_agent = value.to_string();
+            }
+            "ui.tick_rate" => {
+                let v: u64 = value.parse().context("Expected a positive integer")?;
+                if !(10..=1000).contains(&v) {
+                    bail!("Value must be between 10 and 1000");
+                }
+                self.ui.tick_rate = v;
+            }
+            "ui.error_display_timeout" => {
+                let v: u64 = value.parse().context("Expected a positive integer")?;
+                if !(500..=30000).contains(&v) {
+                    bail!("Value must be between 500 and 30000");
+                }
+                self.ui.error_display_timeout = v;
+            }
+            "ui.theme" => match value {
+                "light" => self.ui.theme = Theme::Light,
+                "dark" => self.ui.theme = Theme::Dark,
+                _ => bail!("Invalid theme '{}'. Valid values: light, dark", value),
+            },
+            "ui.compact_mode" => match value {
+                "auto" => self.ui.compact_mode = CompactMode::Auto,
+                "always" => self.ui.compact_mode = CompactMode::Always,
+                "never" => self.ui.compact_mode = CompactMode::Never,
+                _ => bail!(
+                    "Invalid compact_mode '{}'. Valid values: auto, always, never",
+                    value
+                ),
+            },
+            k if k.starts_with("default_feeds") => {
+                bail!("Feed management is not supported via CLI. Use 'feedr config --tui' instead.")
+            }
+            _ => bail!("Unknown config key: {}", key),
+        }
+        Ok(())
+    }
+
     /// Load configuration from the XDG config directory
     /// Falls back to default configuration if file doesn't exist
     pub fn load() -> Result<Self> {
