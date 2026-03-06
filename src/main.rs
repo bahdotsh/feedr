@@ -55,7 +55,10 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Config { action, tui: use_tui }) => {
+        Some(Commands::Config {
+            action,
+            tui: use_tui,
+        }) => {
             if use_tui {
                 return config_tui::run();
             }

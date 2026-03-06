@@ -167,7 +167,11 @@ pub fn get_fields(section: ConfigSection, config: &Config) -> Vec<FieldInfo> {
                             .as_deref()
                             .map(|c| format!(" [{}]", c))
                             .unwrap_or_default();
-                        let hdr = if feed.headers.is_some() { " (auth)" } else { "" };
+                        let hdr = if feed.headers.is_some() {
+                            " (auth)"
+                        } else {
+                            ""
+                        };
                         FieldInfo {
                             key: format!("default_feeds.{}", i),
                             label: format!("Feed #{}", i + 1),
@@ -489,8 +493,7 @@ fn run_editor(
                             };
                         }
                         KeyCode::BackTab => {
-                            editor.add_field_focus =
-                                (editor.add_field_focus + 2) % 3;
+                            editor.add_field_focus = (editor.add_field_focus + 2) % 3;
                             editor.add_cursor = match editor.add_field_focus {
                                 0 => editor.add_url_buffer.len(),
                                 1 => editor.add_category_buffer.len(),
@@ -614,8 +617,7 @@ fn run_editor(
                     KeyCode::BackTab => {
                         let sections = ConfigSection::ALL;
                         let idx = editor.section.index();
-                        editor.section =
-                            sections[(idx + sections.len() - 1) % sections.len()];
+                        editor.section = sections[(idx + sections.len() - 1) % sections.len()];
                         editor.selected_field = 0;
                     }
                     KeyCode::Enter | KeyCode::Char('e') => {

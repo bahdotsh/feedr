@@ -166,9 +166,7 @@ impl Config {
     pub fn get_value(&self, key: &str) -> Result<String> {
         match key {
             "general.max_dashboard_items" => Ok(self.general.max_dashboard_items.to_string()),
-            "general.auto_refresh_interval" => {
-                Ok(self.general.auto_refresh_interval.to_string())
-            }
+            "general.auto_refresh_interval" => Ok(self.general.auto_refresh_interval.to_string()),
             "general.refresh_enabled" => Ok(self.general.refresh_enabled.to_string()),
             "general.refresh_rate_limit_delay" => {
                 Ok(self.general.refresh_rate_limit_delay.to_string())

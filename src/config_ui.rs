@@ -1,10 +1,12 @@
-use crate::config_tui::{get_fields, ConfirmChoice, ConfigEditor, ConfigSection, FieldKind};
+use crate::config_tui::{get_fields, ConfigEditor, ConfigSection, ConfirmChoice, FieldKind};
 use ratatui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Tabs},
+    widgets::{
+        Block, BorderType, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Tabs,
+    },
     Frame,
 };
 
@@ -15,7 +17,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // tabs
-            Constraint::Min(5),   // content
+            Constraint::Min(5),    // content
             Constraint::Length(2), // help bar
         ])
         .split(f.size());
@@ -25,9 +27,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
         .iter()
         .map(|s| {
             let style = if *s == editor.section {
-                Style::default()
-                    .fg(cs.primary)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(cs.primary).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(cs.text_secondary)
             };
@@ -43,9 +43,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
                 .border_style(Style::default().fg(cs.border))
                 .title(Span::styled(
                     " feedr config ",
-                    Style::default()
-                        .fg(cs.primary)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(cs.primary).add_modifier(Modifier::BOLD),
                 )),
         )
         .select(editor.section.index())
@@ -87,17 +85,13 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
             };
 
             let label_style = if is_selected {
-                Style::default()
-                    .fg(cs.text)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(cs.text).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(cs.text_secondary)
             };
 
             let value_style = if is_editing {
-                Style::default()
-                    .fg(cs.primary)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(cs.primary).add_modifier(Modifier::BOLD)
             } else if is_selected {
                 Style::default().fg(cs.highlight)
             } else {
@@ -136,9 +130,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
                 .border_style(Style::default().fg(cs.border))
                 .title(Span::styled(
                     format!(" {} {}", editor.section.title(), dirty_marker),
-                    Style::default()
-                        .fg(cs.text)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(cs.text).add_modifier(Modifier::BOLD),
                 ))
                 .padding(Padding::new(1, 1, 1, 0)),
         )
@@ -190,9 +182,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
         f.render_widget(Clear, area);
         let p = Paragraph::new(Line::from(Span::styled(
             msg.as_str(),
-            Style::default()
-                .fg(cs.success)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(cs.success).add_modifier(Modifier::BOLD),
         )))
         .block(
             Block::default()
@@ -268,9 +258,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
             .border_style(Style::default().fg(cs.primary))
             .title(Span::styled(
                 " Unsaved Changes ",
-                Style::default()
-                    .fg(cs.accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(cs.accent).add_modifier(Modifier::BOLD),
             ));
         f.render_widget(border, area);
         f.render_widget(msg, inner[0]);
@@ -299,9 +287,7 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
             .border_style(Style::default().fg(cs.primary))
             .title(Span::styled(
                 " Add Feed ",
-                Style::default()
-                    .fg(cs.accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(cs.accent).add_modifier(Modifier::BOLD),
             ));
         f.render_widget(border, area);
 
@@ -344,9 +330,8 @@ pub fn render<B: Backend>(f: &mut Frame<B>, editor: &ConfigEditor) {
         } else {
             Style::default().fg(cs.text_secondary)
         };
-        let confirm_line =
-            Paragraph::new(Line::from(Span::styled("[Confirm]", confirm_style)))
-                .alignment(Alignment::Center);
+        let confirm_line = Paragraph::new(Line::from(Span::styled("[Confirm]", confirm_style)))
+            .alignment(Alignment::Center);
 
         f.render_widget(url_line, inner[0]);
         f.render_widget(cat_line, inner[1]);
