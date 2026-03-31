@@ -360,6 +360,7 @@ impl ConfigEditor {
             url,
             category,
             headers: None,
+            refresh_interval: None,
         });
         self.dirty = true;
         self.adding_feed = false;
