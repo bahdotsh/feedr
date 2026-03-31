@@ -787,18 +787,14 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
         View::CategoryManagement => {
             lines.push(Line::from(Span::styled("  Categories", section_style)));
             lines.push(Line::from(""));
-            add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
-            add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
+            add_key("k/↑", "Navigate up", &mut lines);
+            add_key("j/↓", "Navigate down", &mut lines);
             add_key("n", "Create new category", &mut lines);
             add_key("e", "Rename category", &mut lines);
-            add_key(&kd(&KeyAction::DeleteFeed), "Delete category", &mut lines);
-            add_key(&kd(&KeyAction::ToggleExpand), "Expand/collapse", &mut lines);
-            add_key(
-                &kd(&KeyAction::Select),
-                "Assign feed (when adding)",
-                &mut lines,
-            );
-            add_key(&kd(&KeyAction::Quit), "Back to Feeds", &mut lines);
+            add_key("d", "Delete category", &mut lines);
+            add_key("Space", "Expand/collapse", &mut lines);
+            add_key("Enter", "Assign feed (when adding)", &mut lines);
+            add_key("q/Esc", "Back to Feeds", &mut lines);
         }
         View::Summary => {
             lines.push(Line::from(Span::styled("  What's New", section_style)));
