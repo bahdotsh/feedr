@@ -310,6 +310,11 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         render_input_modal(f, app, &colors);
     }
 
+    // Show feed selection modal when picking from discovered feeds
+    if app.input_mode == InputMode::SelectDiscoveredFeed {
+        render_feed_selection_modal(f, app, &colors);
+    }
+
     // Show filter modal when in filter mode
     if app.filter_mode {
         render_filter_modal(f, app, &colors);
@@ -1751,6 +1756,10 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
         ),
         InputMode::FilterMode => ("", Style::default().fg(colors.muted)),
         InputMode::CategoryNameInput => ("", Style::default().fg(colors.muted)),
+        InputMode::SelectDiscoveredFeed => (
+            "j/k: Navigate | Enter: Select feed | Esc: Cancel",
+            Style::default().fg(colors.highlight),
+        ),
     };
 
     // Only show help bar in normal mode
@@ -2033,6 +2042,112 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
 
     let cursor_x = input_rect.x + app.input.chars().count() as u16;
     f.set_cursor(cursor_x.min(input_rect.x + input_rect.width), input_rect.y);
+}
+
+fn render_feed_selection_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
+    let item_count = app.discovered_feeds.len() as u16;
+    // Height: 2 (border) + 2 (padding top) + 2 (padding bottom) + 1 (title) + 1 (sep) + 1 (help text) + 1 (spacer) + items + 1 (spacer) + 1 (controls)
+    let min_h = 10 + item_count;
+    let area = centered_rect_with_min(70, 40, 50, min_h.min(30), f.size());
+
+    f.render_widget(Clear, area);
+
+    let icon = if colors.border_normal == BorderType::Double {
+        "◎"
+    } else {
+        "🔗"
+    };
+
+    let mut lines = Vec::new();
+
+    lines.push(Line::from(vec![Span::styled(
+        format!("{} Select Feed", icon),
+        Style::default()
+            .fg(colors.text)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(vec![Span::styled(
+        format!("{} feed(s) discovered on this page", app.discovered_feeds.len()),
+        Style::default().fg(colors.text_secondary),
+    )]));
+
+    lines.push(Line::from(""));
+
+    let selected = app.discovered_feed_selection.unwrap_or(0);
+    for (i, feed) in app.discovered_feeds.iter().enumerate() {
+        let is_selected = i == selected;
+        let badge = format!("[{}]", feed.feed_type);
+        let prefix = if is_selected { "> " } else { "  " };
+
+        let style = if is_selected {
+            Style::default()
+                .fg(colors.highlight)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(colors.text)
+        };
+
+        let badge_style = if is_selected {
+            Style::default()
+                .fg(colors.primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(colors.text_secondary)
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(prefix, style),
+            Span::styled(format!("{} ", badge), badge_style),
+            Span::styled(feed.title.clone(), style),
+        ]));
+
+        // Show URL on a second line if it differs from the title
+        if feed.url != feed.title {
+            lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(&feed.url, Style::default().fg(colors.text_secondary)),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(vec![
+        Span::styled(
+            "j/k",
+            Style::default()
+                .fg(colors.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" navigate · ", Style::default().fg(colors.text_secondary)),
+        Span::styled(
+            "Enter",
+            Style::default()
+                .fg(colors.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" select · ", Style::default().fg(colors.text_secondary)),
+        Span::styled(
+            "Esc",
+            Style::default()
+                .fg(colors.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(colors.text_secondary)),
+    ]));
+
+    let modal = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(colors.border_focus_type)
+            .border_style(Style::default().fg(colors.border_focus))
+            .style(Style::default().bg(colors.surface))
+            .padding(Padding::new(3, 3, 2, 2)),
+    );
+    f.render_widget(modal, area);
 }
 
 fn render_filter_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {

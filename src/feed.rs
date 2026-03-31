@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
+use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
+use url::Url;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -72,6 +74,92 @@ impl FeedCategory {
     pub fn toggle_expanded(&mut self) {
         self.expanded = !self.expanded;
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct DiscoveredFeed {
+    pub url: String,
+    pub title: String,
+    pub feed_type: String, // "RSS" or "Atom"
+}
+
+#[derive(Debug, Clone)]
+pub struct HtmlWithFeedsError {
+    pub discovered: Vec<DiscoveredFeed>,
+    pub page_url: String,
+}
+
+impl std::fmt::Display for HtmlWithFeedsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.discovered.is_empty() {
+            write!(
+                f,
+                "No RSS/Atom feed links found on this page. URL: {}",
+                self.page_url
+            )
+        } else {
+            write!(
+                f,
+                "HTML page with {} feed link(s) found",
+                self.discovered.len()
+            )
+        }
+    }
+}
+
+impl std::error::Error for HtmlWithFeedsError {}
+
+pub fn discover_feeds_from_html(html: &[u8], base_url: &Url) -> Vec<DiscoveredFeed> {
+    let html_str = String::from_utf8_lossy(html);
+    let document = Html::parse_document(&html_str);
+    let selector = Selector::parse("link[rel=alternate]").unwrap();
+
+    let mut seen_urls = HashSet::new();
+    let mut feeds = Vec::new();
+
+    for element in document.select(&selector) {
+        let link_type = match element.value().attr("type") {
+            Some(t) => t.to_lowercase(),
+            None => continue,
+        };
+
+        let feed_type = if link_type == "application/rss+xml" {
+            "RSS"
+        } else if link_type == "application/atom+xml" {
+            "Atom"
+        } else {
+            continue;
+        };
+
+        let href = match element.value().attr("href") {
+            Some(h) if !h.is_empty() => h,
+            _ => continue,
+        };
+
+        let resolved = match base_url.join(href) {
+            Ok(u) => u.to_string(),
+            Err(_) => continue,
+        };
+
+        if !seen_urls.insert(resolved.clone()) {
+            continue;
+        }
+
+        let title = element
+            .value()
+            .attr("title")
+            .filter(|t| !t.is_empty())
+            .unwrap_or(&resolved)
+            .to_string();
+
+        feeds.push(DiscoveredFeed {
+            url: resolved,
+            title,
+            feed_type: feed_type.to_string(),
+        });
+    }
+
+    feeds
 }
 
 impl Feed {
@@ -168,10 +256,12 @@ impl Feed {
         if content_start.trim_start().starts_with("<!DOCTYPE html")
             || content_start.trim_start().starts_with("<html")
         {
-            return Err(anyhow::anyhow!(
-                "Received HTML page instead of RSS/Atom feed. URL might be incorrect or require authentication. Final URL: {}",
-                final_url
-            ));
+            let discovered = discover_feeds_from_html(&content, &final_url);
+            return Err(HtmlWithFeedsError {
+                discovered,
+                page_url: final_url.to_string(),
+            }
+            .into());
         }
 
         let feed = parser::parse(&content[..])
@@ -280,5 +370,95 @@ fn format_date(dt: DateTime<Utc>) -> String {
     } else {
         // For older items, show the actual date
         dt.format("%B %d, %Y").to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discover_single_rss_feed() {
+        let html = br#"<html><head>
+            <link rel="alternate" type="application/rss+xml" title="My Blog" href="/feed.xml">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/blog/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].url, "https://example.com/feed.xml");
+        assert_eq!(feeds[0].title, "My Blog");
+        assert_eq!(feeds[0].feed_type, "RSS");
+    }
+
+    #[test]
+    fn test_discover_multiple_feeds() {
+        let html = br#"<html><head>
+            <link rel="alternate" type="application/rss+xml" title="RSS Feed" href="/rss.xml">
+            <link rel="alternate" type="application/atom+xml" title="Atom Feed" href="/atom.xml">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds.len(), 2);
+        assert_eq!(feeds[0].feed_type, "RSS");
+        assert_eq!(feeds[1].feed_type, "Atom");
+    }
+
+    #[test]
+    fn test_discover_no_feeds() {
+        let html = br#"<html><head><title>No feeds</title></head><body></body></html>"#;
+        let base = Url::parse("https://example.com/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert!(feeds.is_empty());
+    }
+
+    #[test]
+    fn test_discover_relative_url_resolution() {
+        let html = br#"<html><head>
+            <link rel="alternate" type="application/rss+xml" href="feed.xml">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/blog/page").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds[0].url, "https://example.com/blog/feed.xml");
+    }
+
+    #[test]
+    fn test_discover_absolute_url_preserved() {
+        let html = br#"<html><head>
+            <link rel="alternate" type="application/rss+xml" href="https://feeds.example.com/rss">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds[0].url, "https://feeds.example.com/rss");
+    }
+
+    #[test]
+    fn test_discover_missing_title_falls_back_to_url() {
+        let html = br#"<html><head>
+            <link rel="alternate" type="application/rss+xml" href="/feed.xml">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds[0].title, "https://example.com/feed.xml");
+    }
+
+    #[test]
+    fn test_discover_deduplicates() {
+        let html = br#"<html><head>
+            <link rel="alternate" type="application/rss+xml" title="Feed" href="/feed.xml">
+            <link rel="alternate" type="application/rss+xml" title="Same Feed" href="/feed.xml">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds.len(), 1);
+    }
+
+    #[test]
+    fn test_discover_case_insensitive_type() {
+        let html = br#"<html><head>
+            <link rel="alternate" type="Application/RSS+XML" href="/feed.xml">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds.len(), 1);
     }
 }

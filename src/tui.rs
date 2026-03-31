@@ -987,7 +987,35 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         match app.add_feed(&url) {
                             Ok(_) => {}
                             Err(e) => {
-                                app.error = Some(format!("Failed to add feed: {}", e));
+                                if let Some(html_err) =
+                                    e.downcast_ref::<crate::feed::HtmlWithFeedsError>()
+                                {
+                                    if html_err.discovered.is_empty() {
+                                        app.error = Some(format!(
+                                            "No RSS/Atom feed links found on this page: {}",
+                                            html_err.page_url
+                                        ));
+                                    } else if html_err.discovered.len() == 1 {
+                                        let feed_url = html_err.discovered[0].url.clone();
+                                        match app.add_feed(&feed_url) {
+                                            Ok(_) => {}
+                                            Err(e2) => {
+                                                app.error = Some(format!(
+                                                    "Failed to add discovered feed: {}",
+                                                    e2
+                                                ));
+                                            }
+                                        }
+                                    } else {
+                                        app.discovered_feeds = html_err.discovered.clone();
+                                        app.discovered_feed_selection = Some(0);
+                                        app.input_mode = InputMode::SelectDiscoveredFeed;
+                                        app.input.clear();
+                                        return Ok(false);
+                                    }
+                                } else {
+                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                }
                             }
                         }
                     }
@@ -1003,6 +1031,45 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 }
                 KeyCode::Backspace => {
                     app.input.pop();
+                }
+                _ => {}
+            },
+            InputMode::SelectDiscoveredFeed => match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(sel) = app.discovered_feed_selection {
+                        if sel > 0 {
+                            app.discovered_feed_selection = Some(sel - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if let Some(sel) = app.discovered_feed_selection {
+                        if sel + 1 < app.discovered_feeds.len() {
+                            app.discovered_feed_selection = Some(sel + 1);
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(sel) = app.discovered_feed_selection {
+                        if let Some(discovered) = app.discovered_feeds.get(sel) {
+                            let feed_url = discovered.url.clone();
+                            match app.add_feed(&feed_url) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    app.error =
+                                        Some(format!("Failed to add discovered feed: {}", e));
+                                }
+                            }
+                        }
+                    }
+                    app.discovered_feeds.clear();
+                    app.discovered_feed_selection = None;
+                    app.input_mode = InputMode::Normal;
+                }
+                KeyCode::Esc => {
+                    app.discovered_feeds.clear();
+                    app.discovered_feed_selection = None;
+                    app.input_mode = InputMode::Normal;
                 }
                 _ => {}
             },

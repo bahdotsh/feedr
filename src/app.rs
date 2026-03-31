@@ -52,7 +52,8 @@ pub enum InputMode {
     InsertUrl,
     SearchMode,
     FilterMode,
-    CategoryNameInput, // For creating/renaming categories
+    CategoryNameInput,      // For creating/renaming categories
+    SelectDiscoveredFeed,   // For picking from auto-discovered feeds
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,7 +107,9 @@ pub struct App {
     pub preview_scroll: u16,       // Vertical scroll for preview pane
     pub preview_max_scroll: u16,   // Maximum scroll for preview content
     pub feed_headers: HashMap<String, HashMap<String, String>>, // Per-URL custom HTTP headers
-    pub compact: bool,             // Whether compact mode is active
+    pub compact: bool,                                // Whether compact mode is active
+    pub discovered_feeds: Vec<crate::feed::DiscoveredFeed>, // Feeds discovered from HTML page
+    pub discovered_feed_selection: Option<usize>,      // Selected index in discovered feeds list
 }
 
 #[derive(Clone, Debug)]
@@ -214,6 +217,8 @@ impl App {
             preview_max_scroll: 0,
             feed_headers,
             compact: false,
+            discovered_feeds: Vec::new(),
+            discovered_feed_selection: None,
         };
 
         app.update_dashboard();
