@@ -391,7 +391,7 @@ impl App {
         }
     }
 
-    /// Like `dashboard_item()` but indexes into the active (possibly filtered) list.
+    /// Returns the `(Feed, FeedItem)` at the given position in the active (possibly filtered) list.
     pub fn active_dashboard_item(&self, idx: usize) -> Option<(&Feed, &FeedItem)> {
         let items = self.active_dashboard_items();
         if idx < items.len() {
@@ -723,18 +723,6 @@ impl App {
             .and_then(|feed| self.selected_item.and_then(|idx| feed.items.get(idx)))
     }
 
-    pub fn dashboard_item(&self, idx: usize) -> Option<(&Feed, &FeedItem)> {
-        if idx < self.dashboard_items.len() {
-            let (feed_idx, item_idx) = self.dashboard_items[idx];
-            if let Some(feed) = self.feeds.get(feed_idx) {
-                if let Some(item) = feed.items.get(item_idx) {
-                    return Some((feed, item));
-                }
-            }
-        }
-        None
-    }
-
     pub fn open_current_item_in_browser(&self) -> Result<()> {
         if let Some(item) = self.current_item() {
             if let Some(link) = &item.link {
@@ -784,18 +772,6 @@ impl App {
                 }
             }
         }
-    }
-
-    pub fn search_item(&self, idx: usize) -> Option<(&Feed, &FeedItem)> {
-        if idx < self.filtered_items.len() {
-            let (feed_idx, item_idx) = self.filtered_items[idx];
-            if let Some(feed) = self.feeds.get(feed_idx) {
-                if let Some(item) = feed.items.get(item_idx) {
-                    return Some((feed, item));
-                }
-            }
-        }
-        None
     }
 
     pub fn refresh_feeds(&mut self) -> Result<()> {

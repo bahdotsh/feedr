@@ -383,9 +383,13 @@ fn handle_events(app: &mut App) -> Result<bool> {
                         }
                     }
                     KeyCode::Char('o') => {
-                        if app.selected_item.is_some() {
-                            if let Err(e) = app.open_current_item_in_browser() {
-                                app.error = Some(format!("Failed to open link: {}", e));
+                        if let Some(selected) = app.selected_item {
+                            if let Some((_, item)) = app.active_dashboard_item(selected) {
+                                if let Some(link) = &item.link {
+                                    if let Err(e) = open::that(link) {
+                                        app.error = Some(format!("Failed to open link: {}", e));
+                                    }
+                                }
                             }
                         }
                     }
