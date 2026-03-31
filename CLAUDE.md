@@ -42,7 +42,7 @@ MSRV: 1.75.0. CI runs tests on stable, beta, and 1.75.0.
 - **Data persistence**: Saved to `~/.local/share/feedr/feedr_data.json` — bookmarks, categories, and read item tracking.
 - **Error display is modal**: When `app.error` is `Some`, the keypress is consumed to dismiss it (not passed through to handlers). See the guard at the top of `handle_events`.
 - **Rate limiting**: `last_domain_fetch: HashMap` throttles per-domain HTTP requests.
-- **Authenticated feeds**: `feed_headers: HashMap<String, HashMap<String, String>>` in `App` maps feed URLs to custom HTTP headers. Built from `config.default_feeds` entries that have `headers`. Passed to `Feed::from_url_with_client()` at all fetch call sites.
+- **Authenticated feeds**: `feed_headers: HashMap<String, HashMap<String, String>>` in `App` maps feed URLs to custom HTTP headers. Built from `config.default_feeds` entries that have `headers`. Passed to `Feed::fetch_url()` at all fetch call sites.
 - **Compact mode**: `app.compact` bool is updated each frame by `update_compact_mode(terminal_height)`. Rendering in `ui.rs` branches on `app.compact` for layout, title bar, help bar, and dashboard item format. Controlled by `config.ui.compact_mode` (`Auto`/`Always`/`Never`). Dialog modals use `centered_rect_with_min()` to enforce minimum dimensions regardless of compact mode.
 
 ## Commit Conventions

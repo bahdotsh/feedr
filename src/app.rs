@@ -52,7 +52,8 @@ pub enum InputMode {
     InsertUrl,
     SearchMode,
     FilterMode,
-    CategoryNameInput, // For creating/renaming categories
+    CategoryNameInput,    // For creating/renaming categories
+    SelectDiscoveredFeed, // For picking from auto-discovered feeds
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -107,6 +108,8 @@ pub struct App {
     pub preview_max_scroll: u16,   // Maximum scroll for preview content
     pub feed_headers: HashMap<String, HashMap<String, String>>, // Per-URL custom HTTP headers
     pub compact: bool,             // Whether compact mode is active
+    pub discovered_feeds: Vec<crate::feed::DiscoveredFeed>, // Feeds discovered from HTML page
+    pub discovered_feed_selection: usize, // Selected index in discovered feeds list
 }
 
 #[derive(Clone, Debug)]
@@ -114,6 +117,14 @@ pub enum CategoryAction {
     Create,
     Rename(usize),
     AddFeedToCategory(String), // Feed URL to add
+}
+
+pub enum AddFeedResult {
+    Added,
+    DiscoveredFeeds {
+        feeds: Vec<crate::feed::DiscoveredFeed>,
+        page_url: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -214,6 +225,8 @@ impl App {
             preview_max_scroll: 0,
             feed_headers,
             compact: false,
+            discovered_feeds: Vec::new(),
+            discovered_feed_selection: 0,
         };
 
         app.update_dashboard();
@@ -253,7 +266,8 @@ impl App {
                 let ua = user_agent.clone();
                 let hdrs = self.feed_headers.get(&url).cloned();
                 std::thread::spawn(move || {
-                    Feed::from_url_with_client(&url, &client, Some(&ua), hdrs.as_ref())
+                    Feed::fetch_url(&url, &client, Some(&ua), hdrs.as_ref())
+                        .and_then(|r| r.into_feed())
                 })
             })
             .collect();
@@ -627,21 +641,27 @@ impl App {
         self.apply_filters();
     }
 
-    pub fn add_feed(&mut self, url: &str) -> Result<()> {
+    pub fn add_feed(&mut self, url: &str) -> Result<AddFeedResult> {
         let timeout = self.config.network.http_timeout;
         let user_agent = &self.config.network.user_agent;
         let headers = self.feed_headers.get(url);
-        let feed = Feed::from_url_with_config(url, timeout, Some(user_agent), headers)?;
-        self.feeds.push(feed);
-        if !self.bookmarks.contains(&url.to_string()) {
-            self.bookmarks.push(url.to_string());
+        let client = Feed::build_client(timeout)?;
+        let result = Feed::fetch_url(url, &client, Some(user_agent), headers)?;
+
+        match result {
+            crate::feed::FeedFetchResult::Feed(feed) => {
+                self.feeds.push(feed);
+                if !self.bookmarks.contains(&url.to_string()) {
+                    self.bookmarks.push(url.to_string());
+                }
+                self.update_dashboard();
+                self.save_data()?;
+                Ok(AddFeedResult::Added)
+            }
+            crate::feed::FeedFetchResult::DiscoveredFeeds { feeds, page_url } => {
+                Ok(AddFeedResult::DiscoveredFeeds { feeds, page_url })
+            }
         }
-        self.update_dashboard();
-
-        // Save data
-        self.save_data()?;
-
-        Ok(())
     }
 
     fn opml_dfs(outline: &opml::Outline) -> Vec<String> {
@@ -667,7 +687,14 @@ impl App {
         for feed_list in opml_data.body.outlines {
             for feed in Self::opml_dfs(&feed_list) {
                 match self.add_feed(&feed) {
-                    Ok(_) => println!("Feed {} added", feed),
+                    Ok(AddFeedResult::Added) => println!("Feed {} added", feed),
+                    Ok(AddFeedResult::DiscoveredFeeds { feeds, .. }) => {
+                        eprintln!(
+                            "Skipping {}: HTML page ({} feed links found, use TUI to select)",
+                            feed,
+                            feeds.len()
+                        );
+                    }
                     Err(e) => eprintln!("Error adding {}: {}", feed, e),
                 }
             }
@@ -833,7 +860,8 @@ impl App {
                         }
                         results.push((
                             url.clone(),
-                            Feed::from_url_with_client(url, &client, Some(&ua), hdrs.get(url)),
+                            Feed::fetch_url(url, &client, Some(&ua), hdrs.get(url))
+                                .and_then(|r| r.into_feed()),
                         ));
                     }
                     (domain, results)

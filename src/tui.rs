@@ -1,4 +1,4 @@
-use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
+use crate::app::{AddFeedResult, App, CategoryAction, InputMode, TimeFilter, View};
 use crate::feed::Feed;
 use crate::ui;
 use anyhow::Result;
@@ -66,8 +66,8 @@ fn spawn_feed_refresh(app: &mut App) -> (usize, mpsc::Receiver<(usize, Result<Fe
                 let tx = feed_tx.clone();
                 let hdrs = all_headers.get(&url).cloned();
                 std::thread::spawn(move || {
-                    let result =
-                        Feed::from_url_with_client(&url, &client, Some(&ua), hdrs.as_ref());
+                    let result = Feed::fetch_url(&url, &client, Some(&ua), hdrs.as_ref())
+                        .and_then(|r| r.into_feed());
                     let _ = tx.send((idx, result));
                 });
             }
@@ -288,27 +288,50 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Char('1') => {
                         if app.feeds.is_empty() {
                             // Add Hacker News RSS
-                            if let Err(e) = app.add_feed("https://news.ycombinator.com/rss") {
-                                app.error = Some(format!("Failed to add feed: {}", e));
+                            match app.add_feed("https://news.ycombinator.com/rss") {
+                                Ok(AddFeedResult::Added) => {}
+                                Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
+                                    app.error = Some(
+                                        "URL returned an HTML page instead of a feed".to_string(),
+                                    );
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                }
                             }
                         }
                     }
                     KeyCode::Char('2') => {
                         if app.feeds.is_empty() {
                             // Add TechCrunch RSS
-                            if let Err(e) = app.add_feed("https://feeds.feedburner.com/TechCrunch")
-                            {
-                                app.error = Some(format!("Failed to add feed: {}", e));
+                            match app.add_feed("https://feeds.feedburner.com/TechCrunch") {
+                                Ok(AddFeedResult::Added) => {}
+                                Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
+                                    app.error = Some(
+                                        "URL returned an HTML page instead of a feed".to_string(),
+                                    );
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                }
                             }
                         }
                     }
                     KeyCode::Char('3') => {
                         if app.feeds.is_empty() {
                             // Add NYTimes RSS
-                            if let Err(e) = app.add_feed(
+                            match app.add_feed(
                                 "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
                             ) {
-                                app.error = Some(format!("Failed to add feed: {}", e));
+                                Ok(AddFeedResult::Added) => {}
+                                Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
+                                    app.error = Some(
+                                        "URL returned an HTML page instead of a feed".to_string(),
+                                    );
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                }
                             }
                         }
                     }
@@ -985,7 +1008,21 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     let url = app.input.trim().to_string();
                     if !url.is_empty() {
                         match app.add_feed(&url) {
-                            Ok(_) => {}
+                            Ok(AddFeedResult::Added) => {}
+                            Ok(AddFeedResult::DiscoveredFeeds { feeds, page_url }) => {
+                                if feeds.is_empty() {
+                                    app.error = Some(format!(
+                                        "No RSS/Atom feed links found on this page: {}",
+                                        page_url
+                                    ));
+                                } else {
+                                    app.discovered_feeds = feeds;
+                                    app.discovered_feed_selection = 0;
+                                    app.input_mode = InputMode::SelectDiscoveredFeed;
+                                    app.input.clear();
+                                    return Ok(false);
+                                }
+                            }
                             Err(e) => {
                                 app.error = Some(format!("Failed to add feed: {}", e));
                             }
@@ -1003,6 +1040,45 @@ fn handle_events(app: &mut App) -> Result<bool> {
                 }
                 KeyCode::Backspace => {
                     app.input.pop();
+                }
+                _ => {}
+            },
+            InputMode::SelectDiscoveredFeed => match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.discovered_feed_selection > 0 {
+                        app.discovered_feed_selection -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.discovered_feed_selection + 1 < app.discovered_feeds.len() {
+                        app.discovered_feed_selection += 1;
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(discovered) =
+                        app.discovered_feeds.get(app.discovered_feed_selection)
+                    {
+                        let feed_url = discovered.url.clone();
+                        match app.add_feed(&feed_url) {
+                            Ok(AddFeedResult::Added) => {}
+                            Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
+                                app.error = Some(
+                                    "Discovered feed URL also returned an HTML page".to_string(),
+                                );
+                            }
+                            Err(e) => {
+                                app.error = Some(format!("Failed to add discovered feed: {}", e));
+                            }
+                        }
+                    }
+                    app.discovered_feeds.clear();
+                    app.discovered_feed_selection = 0;
+                    app.input_mode = InputMode::Normal;
+                }
+                KeyCode::Esc => {
+                    app.discovered_feeds.clear();
+                    app.discovered_feed_selection = 0;
+                    app.input_mode = InputMode::Normal;
                 }
                 _ => {}
             },
