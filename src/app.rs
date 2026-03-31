@@ -367,15 +367,54 @@ impl App {
             // Use clone_from to reuse existing allocation
             self.filtered_dashboard_items
                 .clone_from(&self.dashboard_items);
-            return;
+        } else {
+            self.filtered_dashboard_items = self
+                .dashboard_items
+                .iter()
+                .filter(|&&(feed_idx, item_idx)| self.item_matches_filter(feed_idx, item_idx))
+                .cloned()
+                .collect();
         }
 
-        self.filtered_dashboard_items = self
-            .dashboard_items
-            .iter()
-            .filter(|&&(feed_idx, item_idx)| self.item_matches_filter(feed_idx, item_idx))
-            .cloned()
-            .collect();
+        self.clamp_dashboard_selection();
+    }
+
+    /// Returns the item list currently visible on the dashboard,
+    /// accounting for search mode and active filters.
+    pub fn active_dashboard_items(&self) -> &[(usize, usize)] {
+        if self.is_searching {
+            &self.filtered_items
+        } else if self.filter_options.is_active() {
+            &self.filtered_dashboard_items
+        } else {
+            &self.dashboard_items
+        }
+    }
+
+    /// Like `dashboard_item()` but indexes into the active (possibly filtered) list.
+    pub fn active_dashboard_item(&self, idx: usize) -> Option<(&Feed, &FeedItem)> {
+        let items = self.active_dashboard_items();
+        if idx < items.len() {
+            let (feed_idx, item_idx) = items[idx];
+            if let Some(feed) = self.feeds.get(feed_idx) {
+                if let Some(item) = feed.items.get(item_idx) {
+                    return Some((feed, item));
+                }
+            }
+        }
+        None
+    }
+
+    /// Clamp `selected_item` to stay within the active dashboard item list bounds.
+    pub fn clamp_dashboard_selection(&mut self) {
+        let len = self.active_dashboard_items().len();
+        if len == 0 {
+            self.selected_item = None;
+        } else if let Some(sel) = self.selected_item {
+            if sel >= len {
+                self.selected_item = Some(len - 1);
+            }
+        }
     }
 
     fn item_matches_filter(&self, feed_idx: usize, item_idx: usize) -> bool {

@@ -314,14 +314,12 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     KeyCode::Char('s') => {
                         if let Some(selected) = app.selected_item {
-                            let (feed_idx, item_idx) =
-                                if app.is_searching && selected < app.filtered_items.len() {
-                                    app.filtered_items[selected]
-                                } else if selected < app.dashboard_items.len() {
-                                    app.dashboard_items[selected]
-                                } else {
-                                    return Ok(false);
-                                };
+                            let active = app.active_dashboard_items();
+                            let (feed_idx, item_idx) = if selected < active.len() {
+                                active[selected]
+                            } else {
+                                return Ok(false);
+                            };
                             match app.toggle_item_starred(feed_idx, item_idx) {
                                 Ok(is_now_starred) => {
                                     app.success_message = Some(if is_now_starred {
@@ -349,7 +347,7 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 app.selected_item = Some(selected - 1);
                                 app.reset_preview_scroll();
                             }
-                        } else if !app.dashboard_items.is_empty() {
+                        } else if !app.active_dashboard_items().is_empty() {
                             app.selected_item = Some(0);
                         }
                     }
@@ -360,27 +358,20 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                 app.preview_scroll = app.preview_scroll.saturating_add(1);
                             }
                         } else if let Some(selected) = app.selected_item {
-                            if selected < app.dashboard_items.len() - 1 {
+                            let len = app.active_dashboard_items().len();
+                            if len > 0 && selected < len - 1 {
                                 app.selected_item = Some(selected + 1);
                                 app.reset_preview_scroll();
                             }
-                        } else if !app.dashboard_items.is_empty() {
+                        } else if !app.active_dashboard_items().is_empty() {
                             app.selected_item = Some(0);
                         }
                     }
                     KeyCode::Enter => {
                         if let Some(selected) = app.selected_item {
-                            if app.is_searching && selected < app.filtered_items.len() {
-                                let (feed_idx, item_idx) = app.filtered_items[selected];
-                                app.selected_feed = Some(feed_idx);
-                                app.selected_item = Some(item_idx);
-                                app.view = View::FeedItemDetail;
-                                // Auto-mark as read when viewing detail
-                                if let Err(e) = app.mark_item_as_read(feed_idx, item_idx) {
-                                    app.error = Some(format!("Failed to mark item as read: {}", e));
-                                }
-                            } else if selected < app.dashboard_items.len() {
-                                let (feed_idx, item_idx) = app.dashboard_items[selected];
+                            let active = app.active_dashboard_items();
+                            if selected < active.len() {
+                                let (feed_idx, item_idx) = active[selected];
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
                                 app.view = View::FeedItemDetail;
@@ -400,26 +391,9 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     KeyCode::Char(' ') => {
                         if let Some(selected) = app.selected_item {
-                            if app.is_searching && selected < app.filtered_items.len() {
-                                let (feed_idx, item_idx) = app.filtered_items[selected];
-                                match app.toggle_item_read(feed_idx, item_idx) {
-                                    Ok(is_now_read) => {
-                                        app.success_message = Some(if is_now_read {
-                                            "✓ Marked as read".to_string()
-                                        } else {
-                                            "○ Marked as unread".to_string()
-                                        });
-                                        app.success_message_time = Some(std::time::Instant::now());
-                                    }
-                                    Err(e) => {
-                                        app.error =
-                                            Some(format!("Failed to toggle read status: {}", e));
-                                    }
-                                }
-                                // Reapply filters to update the display
-                                app.apply_filters();
-                            } else if selected < app.dashboard_items.len() {
-                                let (feed_idx, item_idx) = app.dashboard_items[selected];
+                            let active = app.active_dashboard_items();
+                            if selected < active.len() {
+                                let (feed_idx, item_idx) = active[selected];
                                 match app.toggle_item_read(feed_idx, item_idx) {
                                     Ok(is_now_read) => {
                                         app.success_message = Some(if is_now_read {
