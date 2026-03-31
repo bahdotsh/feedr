@@ -2070,7 +2070,10 @@ fn render_feed_selection_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: 
     lines.push(Line::from(""));
 
     lines.push(Line::from(vec![Span::styled(
-        format!("{} feed(s) discovered on this page", app.discovered_feeds.len()),
+        format!(
+            "{} feed(s) discovered on this page",
+            app.discovered_feeds.len()
+        ),
         Style::default().fg(colors.text_secondary),
     )]));
 

@@ -253,8 +253,10 @@ impl Feed {
         }
 
         let content_start = String::from_utf8_lossy(&content[..std::cmp::min(200, content.len())]);
-        if content_start.trim_start().starts_with("<!DOCTYPE html")
-            || content_start.trim_start().starts_with("<html")
+        let trimmed_lower = content_start.trim_start().to_lowercase();
+        if content_type.contains("text/html")
+            || trimmed_lower.starts_with("<!doctype html")
+            || trimmed_lower.starts_with("<html")
         {
             let discovered = discover_feeds_from_html(&content, &final_url);
             return Err(HtmlWithFeedsError {
@@ -460,5 +462,16 @@ mod tests {
         let base = Url::parse("https://example.com/").unwrap();
         let feeds = discover_feeds_from_html(html, &base);
         assert_eq!(feeds.len(), 1);
+    }
+
+    #[test]
+    fn test_discover_lowercase_doctype() {
+        let html = br#"<!doctype html><html><head>
+            <link rel="alternate" type="application/rss+xml" title="Feed" href="/feed.xml">
+        </head><body></body></html>"#;
+        let base = Url::parse("https://example.com/").unwrap();
+        let feeds = discover_feeds_from_html(html, &base);
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].url, "https://example.com/feed.xml");
     }
 }

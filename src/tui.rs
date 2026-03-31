@@ -1001,8 +1001,8 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                             Ok(_) => {}
                                             Err(e2) => {
                                                 app.error = Some(format!(
-                                                    "Failed to add discovered feed: {}",
-                                                    e2
+                                                    "Failed to add discovered feed '{}': {}",
+                                                    feed_url, e2
                                                 ));
                                             }
                                         }
