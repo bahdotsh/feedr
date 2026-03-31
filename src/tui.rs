@@ -995,17 +995,6 @@ fn handle_events(app: &mut App) -> Result<bool> {
                                             "No RSS/Atom feed links found on this page: {}",
                                             html_err.page_url
                                         ));
-                                    } else if html_err.discovered.len() == 1 {
-                                        let feed_url = html_err.discovered[0].url.clone();
-                                        match app.add_feed(&feed_url) {
-                                            Ok(_) => {}
-                                            Err(e2) => {
-                                                app.error = Some(format!(
-                                                    "Failed to add discovered feed '{}': {}",
-                                                    feed_url, e2
-                                                ));
-                                            }
-                                        }
                                     } else {
                                         app.discovered_feeds = html_err.discovered.clone();
                                         app.discovered_feed_selection = Some(0);

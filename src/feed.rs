@@ -252,28 +252,36 @@ impl Feed {
             ));
         }
 
-        let content_start = String::from_utf8_lossy(&content[..std::cmp::min(200, content.len())]);
-        let trimmed_lower = content_start.trim_start().to_lowercase();
-        if content_type.contains("text/html")
-            || trimmed_lower.starts_with("<!doctype html")
-            || trimmed_lower.starts_with("<html")
-        {
-            let discovered = discover_feeds_from_html(&content, &final_url);
-            return Err(HtmlWithFeedsError {
-                discovered,
-                page_url: final_url.to_string(),
-            }
-            .into());
-        }
+        // Try parsing as feed first — some servers serve valid feeds with text/html content-type
+        let feed = match parser::parse(&content[..]) {
+            Ok(f) => f,
+            Err(parse_err) => {
+                // Parse failed — check if this looks like HTML and try feed discovery
+                let content_start =
+                    String::from_utf8_lossy(&content[..std::cmp::min(200, content.len())]);
+                let trimmed_lower = content_start.trim_start().to_lowercase();
+                if content_type.contains("text/html")
+                    || trimmed_lower.starts_with("<!doctype html")
+                    || trimmed_lower.starts_with("<html")
+                {
+                    let discovered = discover_feeds_from_html(&content, &final_url);
+                    return Err(HtmlWithFeedsError {
+                        discovered,
+                        page_url: final_url.to_string(),
+                    }
+                    .into());
+                }
 
-        let feed = parser::parse(&content[..])
-            .with_context(|| {
-                let content_preview = String::from_utf8_lossy(&content[..std::cmp::min(300, content.len())]);
-                format!(
-                    "Failed to parse feed (RSS/Atom) from URL: {} (final URL: {}, {} bytes, content-type: {}, preview: {})",
-                    url, final_url, content.len(), content_type, content_preview.trim()
-                )
-            })?;
+                let content_preview =
+                    String::from_utf8_lossy(&content[..std::cmp::min(300, content.len())]);
+                return Err(parse_err).with_context(|| {
+                    format!(
+                        "Failed to parse feed (RSS/Atom) from URL: {} (final URL: {}, {} bytes, content-type: {}, preview: {})",
+                        url, final_url, content.len(), content_type, content_preview.trim()
+                    )
+                });
+            }
+        };
 
         let items = feed.entries.iter().map(FeedItem::from_feed_entry).collect();
 
