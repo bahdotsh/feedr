@@ -272,7 +272,7 @@ impl Feed {
 
         let content = response.bytes().context("Failed to read response body")?;
 
-        // Debug: Check if we got HTML instead of XML
+        // Reject suspiciously short responses (likely empty/error pages)
         if content.len() < 100 {
             return Err(anyhow::anyhow!(
                 "Response too short ({} bytes), might be empty or an error page",

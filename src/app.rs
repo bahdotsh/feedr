@@ -687,7 +687,14 @@ impl App {
         for feed_list in opml_data.body.outlines {
             for feed in Self::opml_dfs(&feed_list) {
                 match self.add_feed(&feed) {
-                    Ok(_) => println!("Feed {} added", feed),
+                    Ok(AddFeedResult::Added) => println!("Feed {} added", feed),
+                    Ok(AddFeedResult::DiscoveredFeeds { feeds, .. }) => {
+                        eprintln!(
+                            "Skipping {}: HTML page ({} feed links found, use TUI to select)",
+                            feed,
+                            feeds.len()
+                        );
+                    }
                     Err(e) => eprintln!("Error adding {}: {}", feed, e),
                 }
             }

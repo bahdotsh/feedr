@@ -1,4 +1,4 @@
-use crate::app::{App, CategoryAction, InputMode, TimeFilter, View};
+use crate::app::{AddFeedResult, App, CategoryAction, InputMode, TimeFilter, View};
 use crate::feed::Feed;
 use crate::ui;
 use anyhow::Result;
@@ -985,8 +985,8 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     let url = app.input.trim().to_string();
                     if !url.is_empty() {
                         match app.add_feed(&url) {
-                            Ok(crate::app::AddFeedResult::Added) => {}
-                            Ok(crate::app::AddFeedResult::DiscoveredFeeds { feeds, page_url }) => {
+                            Ok(AddFeedResult::Added) => {}
+                            Ok(AddFeedResult::DiscoveredFeeds { feeds, page_url }) => {
                                 if feeds.is_empty() {
                                     app.error = Some(format!(
                                         "No RSS/Atom feed links found on this page: {}",
@@ -1037,8 +1037,8 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     {
                         let feed_url = discovered.url.clone();
                         match app.add_feed(&feed_url) {
-                            Ok(crate::app::AddFeedResult::Added) => {}
-                            Ok(crate::app::AddFeedResult::DiscoveredFeeds { .. }) => {
+                            Ok(AddFeedResult::Added) => {}
+                            Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
                                 app.error = Some(
                                     "Discovered feed URL also returned an HTML page".to_string(),
                                 );
