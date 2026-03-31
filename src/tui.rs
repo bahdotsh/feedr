@@ -66,8 +66,8 @@ fn spawn_feed_refresh(app: &mut App) -> (usize, mpsc::Receiver<(usize, Result<Fe
                 let tx = feed_tx.clone();
                 let hdrs = all_headers.get(&url).cloned();
                 std::thread::spawn(move || {
-                    let result =
-                        Feed::from_url_with_client(&url, &client, Some(&ua), hdrs.as_ref());
+                    let result = Feed::fetch_url(&url, &client, Some(&ua), hdrs.as_ref())
+                        .and_then(|r| r.into_feed());
                     let _ = tx.send((idx, result));
                 });
             }
@@ -985,26 +985,23 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     let url = app.input.trim().to_string();
                     if !url.is_empty() {
                         match app.add_feed(&url) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                if let Some(html_err) =
-                                    e.downcast_ref::<crate::feed::HtmlWithFeedsError>()
-                                {
-                                    if html_err.discovered.is_empty() {
-                                        app.error = Some(format!(
-                                            "No RSS/Atom feed links found on this page: {}",
-                                            html_err.page_url
-                                        ));
-                                    } else {
-                                        app.discovered_feeds = html_err.discovered.clone();
-                                        app.discovered_feed_selection = Some(0);
-                                        app.input_mode = InputMode::SelectDiscoveredFeed;
-                                        app.input.clear();
-                                        return Ok(false);
-                                    }
+                            Ok(crate::app::AddFeedResult::Added) => {}
+                            Ok(crate::app::AddFeedResult::DiscoveredFeeds { feeds, page_url }) => {
+                                if feeds.is_empty() {
+                                    app.error = Some(format!(
+                                        "No RSS/Atom feed links found on this page: {}",
+                                        page_url
+                                    ));
                                 } else {
-                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                    app.discovered_feeds = feeds;
+                                    app.discovered_feed_selection = 0;
+                                    app.input_mode = InputMode::SelectDiscoveredFeed;
+                                    app.input.clear();
+                                    return Ok(false);
                                 }
+                            }
+                            Err(e) => {
+                                app.error = Some(format!("Failed to add feed: {}", e));
                             }
                         }
                     }
@@ -1025,39 +1022,39 @@ fn handle_events(app: &mut App) -> Result<bool> {
             },
             InputMode::SelectDiscoveredFeed => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    if let Some(sel) = app.discovered_feed_selection {
-                        if sel > 0 {
-                            app.discovered_feed_selection = Some(sel - 1);
-                        }
+                    if app.discovered_feed_selection > 0 {
+                        app.discovered_feed_selection -= 1;
                     }
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if let Some(sel) = app.discovered_feed_selection {
-                        if sel + 1 < app.discovered_feeds.len() {
-                            app.discovered_feed_selection = Some(sel + 1);
-                        }
+                    if app.discovered_feed_selection + 1 < app.discovered_feeds.len() {
+                        app.discovered_feed_selection += 1;
                     }
                 }
                 KeyCode::Enter => {
-                    if let Some(sel) = app.discovered_feed_selection {
-                        if let Some(discovered) = app.discovered_feeds.get(sel) {
-                            let feed_url = discovered.url.clone();
-                            match app.add_feed(&feed_url) {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    app.error =
-                                        Some(format!("Failed to add discovered feed: {}", e));
-                                }
+                    if let Some(discovered) =
+                        app.discovered_feeds.get(app.discovered_feed_selection)
+                    {
+                        let feed_url = discovered.url.clone();
+                        match app.add_feed(&feed_url) {
+                            Ok(crate::app::AddFeedResult::Added) => {}
+                            Ok(crate::app::AddFeedResult::DiscoveredFeeds { .. }) => {
+                                app.error = Some(
+                                    "Discovered feed URL also returned an HTML page".to_string(),
+                                );
+                            }
+                            Err(e) => {
+                                app.error = Some(format!("Failed to add discovered feed: {}", e));
                             }
                         }
                     }
                     app.discovered_feeds.clear();
-                    app.discovered_feed_selection = None;
+                    app.discovered_feed_selection = 0;
                     app.input_mode = InputMode::Normal;
                 }
                 KeyCode::Esc => {
                     app.discovered_feeds.clear();
-                    app.discovered_feed_selection = None;
+                    app.discovered_feed_selection = 0;
                     app.input_mode = InputMode::Normal;
                 }
                 _ => {}

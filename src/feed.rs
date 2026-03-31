@@ -4,6 +4,8 @@ use feed_rs::parser;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::sync::OnceLock;
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
@@ -76,57 +78,82 @@ impl FeedCategory {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct DiscoveredFeed {
-    pub url: String,
-    pub title: String,
-    pub feed_type: String, // "RSS" or "Atom"
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FeedType {
+    Rss,
+    Atom,
 }
 
-#[derive(Debug, Clone)]
-pub struct HtmlWithFeedsError {
-    pub discovered: Vec<DiscoveredFeed>,
-    pub page_url: String,
-}
-
-impl std::fmt::Display for HtmlWithFeedsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.discovered.is_empty() {
-            write!(
-                f,
-                "No RSS/Atom feed links found on this page. URL: {}",
-                self.page_url
-            )
-        } else {
-            write!(
-                f,
-                "HTML page with {} feed link(s) found",
-                self.discovered.len()
-            )
+impl fmt::Display for FeedType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FeedType::Rss => write!(f, "RSS"),
+            FeedType::Atom => write!(f, "Atom"),
         }
     }
 }
 
-impl std::error::Error for HtmlWithFeedsError {}
+#[derive(Clone, Debug)]
+pub struct DiscoveredFeed {
+    pub url: String,
+    pub title: String,
+    pub feed_type: FeedType,
+}
+
+/// Result of fetching a URL that was expected to be a feed.
+pub enum FeedFetchResult {
+    /// Successfully parsed as an RSS/Atom feed.
+    Feed(Feed),
+    /// The URL returned an HTML page; any discovered feed links are included.
+    DiscoveredFeeds {
+        feeds: Vec<DiscoveredFeed>,
+        page_url: String,
+    },
+}
+
+impl FeedFetchResult {
+    /// Convert to a `Feed`, returning an error if this was an HTML page.
+    pub fn into_feed(self) -> Result<Feed> {
+        match self {
+            FeedFetchResult::Feed(feed) => Ok(feed),
+            FeedFetchResult::DiscoveredFeeds { feeds, page_url } => {
+                if feeds.is_empty() {
+                    Err(anyhow::anyhow!(
+                        "No RSS/Atom feed links found on this page: {}",
+                        page_url
+                    ))
+                } else {
+                    Err(anyhow::anyhow!(
+                        "URL is an HTML page, not a feed. {} feed link(s) found on: {}",
+                        feeds.len(),
+                        page_url
+                    ))
+                }
+            }
+        }
+    }
+}
 
 pub fn discover_feeds_from_html(html: &[u8], base_url: &Url) -> Vec<DiscoveredFeed> {
+    static SELECTOR: OnceLock<Selector> = OnceLock::new();
+    let selector = SELECTOR.get_or_init(|| Selector::parse("link[rel=alternate]").unwrap());
+
     let html_str = String::from_utf8_lossy(html);
     let document = Html::parse_document(&html_str);
-    let selector = Selector::parse("link[rel=alternate]").unwrap();
 
     let mut seen_urls = HashSet::new();
     let mut feeds = Vec::new();
 
-    for element in document.select(&selector) {
+    for element in document.select(selector) {
         let link_type = match element.value().attr("type") {
             Some(t) => t.to_lowercase(),
             None => continue,
         };
 
         let feed_type = if link_type == "application/rss+xml" {
-            "RSS"
+            FeedType::Rss
         } else if link_type == "application/atom+xml" {
-            "Atom"
+            FeedType::Atom
         } else {
             continue;
         };
@@ -155,7 +182,7 @@ pub fn discover_feeds_from_html(html: &[u8], base_url: &Url) -> Vec<DiscoveredFe
         feeds.push(DiscoveredFeed {
             url: resolved,
             title,
-            feed_type: feed_type.to_string(),
+            feed_type,
         });
     }
 
@@ -173,7 +200,8 @@ impl Feed {
         Self::from_url_with_config(url, timeout_secs, None, None)
     }
 
-    /// Fetch and parse a feed from a URL with custom timeout and user agent
+    /// Fetch and parse a feed from a URL with custom timeout and user agent.
+    /// Returns an error if the URL is an HTML page (use `fetch_url` for discovery support).
     pub fn from_url_with_config(
         url: &str,
         timeout_secs: u64,
@@ -181,7 +209,7 @@ impl Feed {
         custom_headers: Option<&HashMap<String, String>>,
     ) -> Result<Self> {
         let client = Self::build_client(timeout_secs)?;
-        Self::from_url_with_client(url, &client, user_agent, custom_headers)
+        Self::fetch_url(url, &client, user_agent, custom_headers)?.into_feed()
     }
 
     /// Build a shared HTTP client with the given timeout
@@ -193,13 +221,13 @@ impl Feed {
             .context("Failed to create HTTP client")
     }
 
-    /// Fetch and parse a feed from a URL using a pre-built client
-    pub fn from_url_with_client(
+    /// Fetch a URL and return either a parsed feed or discovered feed links.
+    pub fn fetch_url(
         url: &str,
         client: &reqwest::blocking::Client,
         user_agent: Option<&str>,
         custom_headers: Option<&HashMap<String, String>>,
-    ) -> Result<Self> {
+    ) -> Result<FeedFetchResult> {
         let default_user_agent =
             "Mozilla/5.0 (compatible; Feedr/1.0; +https://github.com/bahdotsh/feedr)";
         let ua = user_agent.unwrap_or(default_user_agent);
@@ -265,11 +293,10 @@ impl Feed {
                     || trimmed_lower.starts_with("<html")
                 {
                     let discovered = discover_feeds_from_html(&content, &final_url);
-                    return Err(HtmlWithFeedsError {
-                        discovered,
+                    return Ok(FeedFetchResult::DiscoveredFeeds {
+                        feeds: discovered,
                         page_url: final_url.to_string(),
-                    }
-                    .into());
+                    });
                 }
 
                 let content_preview =
@@ -291,12 +318,12 @@ impl Feed {
             .unwrap_or_else(|| "Untitled Feed".to_string());
         let title_lower = title.to_lowercase();
 
-        Ok(Feed {
+        Ok(FeedFetchResult::Feed(Feed {
             url: url.to_string(),
             title,
             items,
             title_lower,
-        })
+        }))
     }
 }
 
@@ -397,7 +424,7 @@ mod tests {
         assert_eq!(feeds.len(), 1);
         assert_eq!(feeds[0].url, "https://example.com/feed.xml");
         assert_eq!(feeds[0].title, "My Blog");
-        assert_eq!(feeds[0].feed_type, "RSS");
+        assert_eq!(feeds[0].feed_type, FeedType::Rss);
     }
 
     #[test]
@@ -409,8 +436,8 @@ mod tests {
         let base = Url::parse("https://example.com/").unwrap();
         let feeds = discover_feeds_from_html(html, &base);
         assert_eq!(feeds.len(), 2);
-        assert_eq!(feeds[0].feed_type, "RSS");
-        assert_eq!(feeds[1].feed_type, "Atom");
+        assert_eq!(feeds[0].feed_type, FeedType::Rss);
+        assert_eq!(feeds[1].feed_type, FeedType::Atom);
     }
 
     #[test]

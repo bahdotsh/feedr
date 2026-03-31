@@ -2045,9 +2045,24 @@ fn render_input_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorSch
 }
 
 fn render_feed_selection_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: &ColorScheme) {
-    let item_count = app.discovered_feeds.len() as u16;
-    // Height: 2 (border) + 2 (padding top) + 2 (padding bottom) + 1 (title) + 1 (sep) + 1 (help text) + 1 (spacer) + items + 1 (spacer) + 1 (controls)
-    let min_h = 10 + item_count;
+    // Cap visible items to avoid overflow; 8 items × ~2 lines each = 16 content lines max
+    let max_visible: usize = 8;
+    let total = app.discovered_feeds.len();
+    let selected = app.discovered_feed_selection;
+
+    // Scroll window: keep selected item visible
+    let scroll_offset = if total <= max_visible {
+        0
+    } else {
+        selected
+            .saturating_sub(max_visible - 1)
+            .min(total - max_visible)
+    };
+    let visible_end = (scroll_offset + max_visible).min(total);
+
+    let visible_count = (visible_end - scroll_offset) as u16;
+    // Height: 2 (border) + 4 (padding) + 1 (title) + 1 (count) + 2 (spacers) + items*2 + 1 (controls)
+    let min_h = 11 + visible_count * 2;
     let area = centered_rect_with_min(70, 40, 50, min_h.min(30), f.size());
 
     f.render_widget(Clear, area);
@@ -2069,18 +2084,31 @@ fn render_feed_selection_modal<B: Backend>(f: &mut Frame<B>, app: &App, colors: 
 
     lines.push(Line::from(""));
 
-    lines.push(Line::from(vec![Span::styled(
+    let scroll_hint = if total > max_visible {
         format!(
-            "{} feed(s) discovered on this page",
-            app.discovered_feeds.len()
-        ),
+            "{} feed(s) discovered on this page (showing {}-{} of {})",
+            total,
+            scroll_offset + 1,
+            visible_end,
+            total
+        )
+    } else {
+        format!("{} feed(s) discovered on this page", total)
+    };
+    lines.push(Line::from(vec![Span::styled(
+        scroll_hint,
         Style::default().fg(colors.text_secondary),
     )]));
 
     lines.push(Line::from(""));
 
-    let selected = app.discovered_feed_selection.unwrap_or(0);
-    for (i, feed) in app.discovered_feeds.iter().enumerate() {
+    for (i, feed) in app
+        .discovered_feeds
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(max_visible)
+    {
         let is_selected = i == selected;
         let badge = format!("[{}]", feed.feed_type);
         let prefix = if is_selected { "> " } else { "  " };
