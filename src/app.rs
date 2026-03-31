@@ -1797,4 +1797,215 @@ mod tests {
         app.refresh_in_progress = true;
         assert!(!app.should_auto_refresh());
     }
+
+    #[test]
+    fn test_should_auto_refresh_per_feed_interval() {
+        let mut app = App::new();
+        // Disable global refresh
+        app.config.general.refresh_enabled = false;
+        app.config.general.auto_refresh_interval = 0;
+
+        // Add a per-feed interval
+        app.feed_refresh_intervals
+            .insert("https://example.com/feed".to_string(), 60);
+
+        // Never refreshed — should trigger
+        assert!(app.should_auto_refresh());
+
+        // Mark as recently refreshed globally
+        app.last_refresh = Some(std::time::Instant::now());
+        assert!(!app.should_auto_refresh());
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_uncategorized_only() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        app.rebuild_feed_tree();
+
+        // Should have exactly 2 uncategorized feed entries
+        assert_eq!(app.feed_tree.len(), 2);
+        assert!(matches!(app.feed_tree[0], TreeItem::Feed(0, None)));
+        assert!(matches!(app.feed_tree[1], TreeItem::Feed(1, None)));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_with_category() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        let mut cat = FeedCategory::new("Tech");
+        cat.add_feed("https://example.com/feed1");
+        app.categories.push(cat);
+        app.rebuild_feed_tree();
+
+        // Category node + expanded feed + 1 uncategorized feed = 3
+        assert_eq!(app.feed_tree.len(), 3);
+        assert!(matches!(app.feed_tree[0], TreeItem::Category(0)));
+        assert!(matches!(app.feed_tree[1], TreeItem::Feed(0, Some(0))));
+        assert!(matches!(app.feed_tree[2], TreeItem::Feed(1, None)));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_collapsed_category() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        let mut cat = FeedCategory::new("Tech");
+        cat.add_feed("https://example.com/feed1");
+        cat.expanded = false;
+        app.categories.push(cat);
+        app.rebuild_feed_tree();
+
+        // Category node + 1 uncategorized (feed1 is hidden, feed2 uncategorized)
+        assert_eq!(app.feed_tree.len(), 2);
+        assert!(matches!(app.feed_tree[0], TreeItem::Category(0)));
+        assert!(matches!(app.feed_tree[1], TreeItem::Feed(1, None)));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_clamps_selection() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        app.rebuild_feed_tree();
+        // Set selection beyond bounds
+        app.selected_tree_item = Some(100);
+        app.rebuild_feed_tree();
+        assert_eq!(app.selected_tree_item, Some(app.feed_tree.len() - 1));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_empty() {
+        let mut app = App::new();
+        app.feeds.clear();
+        app.categories.clear();
+        app.selected_tree_item = Some(5);
+        app.rebuild_feed_tree();
+        assert!(app.feed_tree.is_empty());
+        assert_eq!(app.selected_tree_item, None);
+    }
+
+    #[test]
+    fn test_mark_all_dashboard_read() {
+        let mut app = make_test_app();
+        app.read_items.clear();
+        // All 3 items should be unread initially
+        assert!(!app.is_item_read(0, 0));
+        assert!(!app.is_item_read(0, 1));
+        assert!(!app.is_item_read(1, 0));
+
+        let count = app.mark_all_dashboard_read().unwrap();
+        assert_eq!(count, 3);
+
+        assert!(app.is_item_read(0, 0));
+        assert!(app.is_item_read(0, 1));
+        assert!(app.is_item_read(1, 0));
+
+        // Calling again should mark 0 new items
+        let count = app.mark_all_dashboard_read().unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_mark_all_feed_read() {
+        let mut app = make_test_app();
+        app.read_items.clear();
+        let count = app.mark_all_feed_read(0).unwrap();
+        assert_eq!(count, 2); // Feed 0 has 2 items
+
+        assert!(app.is_item_read(0, 0));
+        assert!(app.is_item_read(0, 1));
+        assert!(!app.is_item_read(1, 0)); // Feed 1 untouched
+    }
+
+    #[test]
+    fn test_mark_all_feed_read_invalid_index() {
+        let mut app = make_test_app();
+        let count = app.mark_all_feed_read(999).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_mark_all_starred_read() {
+        let mut app = make_test_app();
+        app.read_items.clear();
+        app.starred_items.clear();
+        // Star two items
+        app.toggle_item_starred(0, 0).unwrap();
+        app.toggle_item_starred(1, 0).unwrap();
+
+        let count = app.mark_all_starred_read().unwrap();
+        assert_eq!(count, 2);
+        assert!(app.is_item_read(0, 0));
+        assert!(app.is_item_read(1, 0));
+        assert!(!app.is_item_read(0, 1)); // Unstarred item untouched
+    }
+
+    #[test]
+    fn test_extract_links_from_html() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+
+        // Set HTML content with links and images
+        app.feeds[0].items[0].description = Some(
+            r#"<p>Check out <a href="https://example.com/page">this page</a>
+            and <a href="https://example.com/other">another link</a></p>
+            <img src="https://example.com/image.png" alt="test image">"#
+                .to_string(),
+        );
+
+        app.extract_links_from_current_item();
+
+        assert!(app.show_link_overlay);
+        assert_eq!(app.extracted_links.len(), 3);
+        assert_eq!(app.extracted_links[0].url, "https://example.com/page");
+        assert_eq!(app.extracted_links[0].text, "this page");
+        assert!(matches!(app.extracted_links[0].link_type, LinkType::Link));
+        assert_eq!(app.extracted_links[2].url, "https://example.com/image.png");
+        assert!(matches!(app.extracted_links[2].link_type, LinkType::Image));
+    }
+
+    #[test]
+    fn test_extract_links_deduplicates() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+
+        app.feeds[0].items[0].description = Some(
+            r#"<a href="https://example.com">link1</a>
+            <a href="https://example.com">link2</a>"#
+                .to_string(),
+        );
+
+        app.extract_links_from_current_item();
+
+        assert_eq!(app.extracted_links.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_links_no_content() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+        app.feeds[0].items[0].description = None;
+
+        app.extract_links_from_current_item();
+
+        assert!(!app.show_link_overlay);
+        assert!(app.extracted_links.is_empty());
+    }
+
+    #[test]
+    fn test_extract_links_resolves_relative_urls() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+        // Item has a base URL via its link
+        app.feeds[0].items[0].link = Some("https://example.com/article/123".to_string());
+        app.feeds[0].items[0].description = Some(r#"<a href="/about">About</a>"#.to_string());
+
+        app.extract_links_from_current_item();
+
+        assert_eq!(app.extracted_links.len(), 1);
+        assert_eq!(app.extracted_links[0].url, "https://example.com/about");
+    }
 }

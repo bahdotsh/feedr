@@ -1,3 +1,19 @@
+// Keybinding configurability boundary
+// =====================================
+// Most actions in Dashboard, FeedList, FeedItems, FeedItemDetail, and
+// Starred views use `app.key_matches(KeyAction::…)` and respect the
+// user's [keybindings] config overrides.
+//
+// The following are intentionally hardcoded and will NOT change when
+// users remap keys:
+//   - Tab / Shift+Tab for view switching (structural navigation)
+//   - Number keys 1/2/3 for demo feed shortcuts (Dashboard only)
+//   - CategoryManagement: all keys (n/e/d/Enter/Space/r/j/k/q/Esc/?)
+//   - FilterMode: all filter-cycling keys (c/t/a/r/s/l/x/Esc)
+//   - SelectDiscoveredFeed: j/k/Enter/Esc
+//   - All text input modes (InsertUrl, SearchMode, CategoryNameInput)
+//   - Detail view: g/G/l and Ctrl+u/Ctrl+d for scrolling and links
+
 use crate::app::{AddFeedResult, App, CategoryAction, InputMode, TimeFilter, TreeItem, View};
 use crate::keybindings::KeyAction;
 use anyhow::Result;
@@ -92,13 +108,12 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
                                 if app.filter_options.category.is_none() {
                                     // Set to first category
                                     app.filter_options.category = Some(categories[0].clone());
-                                } else {
+                                } else if let Some(current) = app.filter_options.category.as_ref() {
                                     // Find current index and move to next
-                                    let current = app.filter_options.category.as_ref().unwrap();
                                     let current_idx = categories.iter().position(|c| c == current);
 
                                     if let Some(idx) = current_idx {
-                                        if idx < categories.len() - 1 {
+                                        if idx + 1 < categories.len() {
                                             // Move to next category
                                             app.filter_options.category =
                                                 Some(categories[idx + 1].clone());
@@ -984,7 +999,7 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
                         KeyCode::Down | KeyCode::Char('j') => {
                             // Select next category
                             if let Some(selected) = app.selected_category {
-                                if selected < app.categories.len() - 1 {
+                                if selected < app.categories.len().saturating_sub(1) {
                                     app.selected_category = Some(selected + 1);
                                 }
                             } else if !app.categories.is_empty() {
@@ -1319,7 +1334,7 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Result<bool> {
                             }
                         } else if let Some(selected) = app.selected_item {
                             let len = app.active_dashboard_items().len();
-                            if len > 0 && selected < len - 1 {
+                            if selected < len.saturating_sub(1) {
                                 app.selected_item = Some(selected + 1);
                                 app.reset_preview_scroll();
                             }
