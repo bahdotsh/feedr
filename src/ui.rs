@@ -460,13 +460,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
     }
 
     // Determine which item list to use — borrow as a slice to avoid cloning
-    let items_to_display: &[(usize, usize)] = if app.is_searching {
-        &app.filtered_items
-    } else if app.filter_options.is_active() {
-        &app.filtered_dashboard_items
-    } else {
-        &app.dashboard_items
-    };
+    let items_to_display: &[(usize, usize)] = app.active_dashboard_items();
     // Copy the indices we need for the preview pane before borrowing app mutably
     let preview_indices: Vec<(usize, usize)> = if app.preview_pane {
         items_to_display.to_vec()
@@ -682,11 +676,7 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect, col
         .iter()
         .enumerate()
         .map(|(idx, &(feed_idx, item_idx))| {
-            let (feed, item) = if app.is_searching {
-                app.search_item(idx).unwrap()
-            } else {
-                app.dashboard_item(idx).unwrap()
-            };
+            let (feed, item) = app.active_dashboard_item(idx).unwrap();
 
             let date_str = item.formatted_date.as_deref().unwrap_or("Unknown date");
             let is_selected = app.selected_item == Some(idx);
