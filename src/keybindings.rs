@@ -337,13 +337,20 @@ pub fn parse_key_string(s: &str) -> Option<KeyBinding> {
 
 /// Build keybinding map by merging defaults with config overrides.
 /// Config format in TOML: [keybindings] section with action_name = "key" or action_name = ["key1", "key2"]
-pub fn build_keybindings(config_keybindings: &HashMap<String, toml::Value>) -> KeyBindingMap {
+/// Returns the map and a list of warnings for invalid config entries.
+pub fn build_keybindings(
+    config_keybindings: &HashMap<String, toml::Value>,
+) -> (KeyBindingMap, Vec<String>) {
     let mut map = default_keybindings();
+    let mut warnings = Vec::new();
 
     for (action_str, value) in config_keybindings {
         let action: KeyAction = match action_str.parse() {
             Ok(a) => a,
-            Err(_) => continue, // Unknown action, skip
+            Err(_) => {
+                warnings.push(format!("unknown action '{}'", action_str));
+                continue;
+            }
         };
 
         // Parse key bindings
@@ -353,16 +360,31 @@ pub fn build_keybindings(config_keybindings: &HashMap<String, toml::Value>) -> K
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect(),
-            _ => continue,
+            _ => {
+                warnings.push(format!(
+                    "'{}' has invalid value (expected string or array)",
+                    action_str
+                ));
+                continue;
+            }
         };
 
-        let bindings: Vec<KeyBinding> = keys.iter().filter_map(|k| parse_key_string(k)).collect();
+        let mut bindings = Vec::new();
+        for key_str in &keys {
+            match parse_key_string(key_str) {
+                Some(b) => bindings.push(b),
+                None => warnings.push(format!(
+                    "could not parse key '{}' for action '{}'",
+                    key_str, action_str
+                )),
+            }
+        }
         if !bindings.is_empty() {
             map.insert(action, bindings);
         }
     }
 
-    map
+    (map, warnings)
 }
 
 /// Get display string for the first binding of an action
@@ -485,12 +507,13 @@ mod tests {
     fn test_build_keybindings_override() {
         let mut overrides = HashMap::new();
         overrides.insert("quit".to_string(), toml::Value::String("x".to_string()));
-        let map = build_keybindings(&overrides);
+        let (map, warnings) = build_keybindings(&overrides);
 
         // Quit should now be 'x'
         let bindings = map.get(&KeyAction::Quit).unwrap();
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].code, KeyCode::Char('x'));
+        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -503,13 +526,14 @@ mod tests {
                 toml::Value::String("Ctrl+w".to_string()),
             ]),
         );
-        let map = build_keybindings(&overrides);
+        let (map, warnings) = build_keybindings(&overrides);
 
         let bindings = map.get(&KeyAction::Quit).unwrap();
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].code, KeyCode::Char('x'));
         assert_eq!(bindings[1].code, KeyCode::Char('w'));
         assert_eq!(bindings[1].modifiers, KeyModifiers::CONTROL);
+        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -526,14 +550,58 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_action_ignored() {
+    fn test_unknown_action_warns() {
         let mut overrides = HashMap::new();
         overrides.insert(
             "nonexistent_action".to_string(),
             toml::Value::String("x".to_string()),
         );
-        // Should not panic, unknown actions are just skipped
-        let map = build_keybindings(&overrides);
+        let (map, warnings) = build_keybindings(&overrides);
         assert!(map.contains_key(&KeyAction::Quit)); // defaults still present
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("unknown action"));
+        assert!(warnings[0].contains("nonexistent_action"));
+    }
+
+    #[test]
+    fn test_unparseable_key_warns() {
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "quit".to_string(),
+            toml::Value::String("Crtl+q".to_string()), // typo
+        );
+        let (map, warnings) = build_keybindings(&overrides);
+        // Default binding should remain since the override failed to parse
+        let bindings = map.get(&KeyAction::Quit).unwrap();
+        assert_eq!(bindings[0].code, KeyCode::Char('q'));
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("could not parse"));
+        assert!(warnings[0].contains("Crtl+q"));
+    }
+
+    #[test]
+    fn test_invalid_value_type_warns() {
+        let mut overrides = HashMap::new();
+        overrides.insert("quit".to_string(), toml::Value::Integer(42));
+        let (map, warnings) = build_keybindings(&overrides);
+        // Default binding should remain
+        let bindings = map.get(&KeyAction::Quit).unwrap();
+        assert_eq!(bindings[0].code, KeyCode::Char('q'));
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("invalid value"));
+    }
+
+    #[test]
+    fn test_parse_key_string_invalid_inputs() {
+        // Empty string
+        assert!(parse_key_string("").is_none());
+        // Too many parts
+        assert!(parse_key_string("Ctrl+Shift+X").is_none());
+        // Unknown modifier
+        assert!(parse_key_string("Meta+q").is_none());
+        // Trailing +
+        assert!(parse_key_string("Ctrl+").is_none());
+        // Multi-char key name that isn't a special key
+        assert!(parse_key_string("abc").is_none());
     }
 }

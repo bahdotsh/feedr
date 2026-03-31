@@ -12,7 +12,7 @@
 //   - FilterMode: all filter-cycling keys (c/t/a/r/s/l/x/Esc)
 //   - SelectDiscoveredFeed: j/k/Enter/Esc
 //   - All text input modes (InsertUrl, SearchMode, CategoryNameInput)
-//   - Detail view: g/G/l and Ctrl+u/Ctrl+d for scrolling and links
+//   - Detail view: g/G and Ctrl+u/Ctrl+d for scrolling
 
 use crate::app::{AddFeedResult, App, CategoryAction, InputMode, TimeFilter, TreeItem, View};
 use crate::keybindings::KeyAction;
@@ -20,6 +20,76 @@ use anyhow::Result;
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
+
+// ── Shared action helpers ──────────────────────────────────────────
+// These eliminate duplicated blocks that were identical across views.
+
+fn handle_toggle_theme(app: &mut App) {
+    if let Err(e) = app.toggle_theme() {
+        app.error = Some(format!("Failed to toggle theme: {}", e));
+    } else {
+        app.success_message = Some("Theme toggled".to_string());
+        app.success_message_time = Some(std::time::Instant::now());
+    }
+}
+
+fn handle_refresh(app: &mut App) {
+    if !app.refresh_in_progress {
+        app.refresh_requested = true;
+    }
+}
+
+fn handle_open_search(app: &mut App) {
+    app.input.clear();
+    app.input_mode = InputMode::SearchMode;
+}
+
+fn handle_show_help(app: &mut App) {
+    app.show_help_overlay = true;
+    app.help_overlay_scroll = 0;
+}
+
+fn handle_toggle_star_current(app: &mut App) {
+    if let Some(feed_idx) = app.selected_feed {
+        if let Some(item_idx) = app.selected_item {
+            match app.toggle_item_starred(feed_idx, item_idx) {
+                Ok(is_now_starred) => {
+                    app.success_message = Some(if is_now_starred {
+                        "\u{2605} Starred".to_string()
+                    } else {
+                        "\u{2606} Unstarred".to_string()
+                    });
+                    app.success_message_time = Some(std::time::Instant::now());
+                }
+                Err(e) => {
+                    app.error = Some(format!("Failed to toggle star: {}", e));
+                }
+            }
+        }
+    }
+}
+
+fn handle_toggle_read_current(app: &mut App) {
+    if let Some(feed_idx) = app.selected_feed {
+        if let Some(item_idx) = app.selected_item {
+            match app.toggle_item_read(feed_idx, item_idx) {
+                Ok(is_now_read) => {
+                    app.success_message = Some(if is_now_read {
+                        "\u{2713} Marked as read".to_string()
+                    } else {
+                        "\u{25CB} Marked as unread".to_string()
+                    });
+                    app.success_message_time = Some(std::time::Instant::now());
+                }
+                Err(e) => {
+                    app.error = Some(format!("Failed to toggle read status: {}", e));
+                }
+            }
+        }
+    }
+}
+
+// ── Event entry point ──────────────────────────────────────────────
 
 pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
     let event = event::read()?;
@@ -93,50 +163,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
         match app.input_mode {
             InputMode::Normal => match app.view {
                 View::Dashboard => match key.code {
-                    // Keep hardcoded: demo feed shortcuts and category cycling
-                    KeyCode::Char('c') => {
-                        if key.modifiers.contains(KeyModifiers::CONTROL) {
-                            // Switch to category management view
-                            app.view = View::CategoryManagement;
-                            app.selected_category = if !app.categories.is_empty() {
-                                Some(0)
-                            } else {
-                                None
-                            };
-                        } else {
-                            // Get available categories
-                            let categories = app.get_available_categories();
-
-                            if categories.is_empty() {
-                                // No categories available, toggle off if on
-                                app.filter_options.category = None;
-                            } else {
-                                // Cycle through available categories
-                                if app.filter_options.category.is_none() {
-                                    // Set to first category
-                                    app.filter_options.category = Some(categories[0].clone());
-                                } else if let Some(current) = app.filter_options.category.as_ref() {
-                                    // Find current index and move to next
-                                    let current_idx = categories.iter().position(|c| c == current);
-
-                                    if let Some(idx) = current_idx {
-                                        if idx + 1 < categories.len() {
-                                            // Move to next category
-                                            app.filter_options.category =
-                                                Some(categories[idx + 1].clone());
-                                        } else {
-                                            // Wrap around to None
-                                            app.filter_options.category = None;
-                                        }
-                                    } else {
-                                        // Current category not found, set to first
-                                        app.filter_options.category = Some(categories[0].clone());
-                                    }
-                                }
-                            }
-                            app.apply_filters();
-                        }
-                    }
+                    // Keep hardcoded: demo feed shortcuts and tab switching
                     KeyCode::Tab => {
                         if key.modifiers.contains(event::KeyModifiers::SHIFT) {
                             app.view = View::Starred;
@@ -198,6 +225,37 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                     }
                     // Configurable keybindings via match guards
                     _ if app.key_matches(KeyAction::Quit, &key) => return Ok(true),
+                    // OpenCategoryManagement must come before CycleCategory
+                    // because Ctrl+c matches both (NONE modifier is a subset of any).
+                    _ if app.key_matches(KeyAction::OpenCategoryManagement, &key) => {
+                        app.view = View::CategoryManagement;
+                        app.selected_category = if !app.categories.is_empty() {
+                            Some(0)
+                        } else {
+                            None
+                        };
+                    }
+                    _ if app.key_matches(KeyAction::CycleCategory, &key) => {
+                        let categories = app.get_available_categories();
+
+                        if categories.is_empty() {
+                            app.filter_options.category = None;
+                        } else if app.filter_options.category.is_none() {
+                            app.filter_options.category = Some(categories[0].clone());
+                        } else if let Some(current) = app.filter_options.category.as_ref() {
+                            let current_idx = categories.iter().position(|c| c == current);
+                            if let Some(idx) = current_idx {
+                                if idx + 1 < categories.len() {
+                                    app.filter_options.category = Some(categories[idx + 1].clone());
+                                } else {
+                                    app.filter_options.category = None;
+                                }
+                            } else {
+                                app.filter_options.category = Some(categories[0].clone());
+                            }
+                        }
+                        app.apply_filters();
+                    }
                     _ if app.key_matches(KeyAction::OpenFilter, &key) => {
                         app.filter_mode = true;
                         app.input_mode = InputMode::FilterMode;
@@ -207,21 +265,13 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         app.input_mode = InputMode::InsertUrl;
                     }
                     _ if app.key_matches(KeyAction::Refresh, &key) => {
-                        if !app.refresh_in_progress {
-                            app.refresh_requested = true;
-                        }
+                        handle_refresh(app);
                     }
                     _ if app.key_matches(KeyAction::ToggleTheme, &key) => {
-                        if let Err(e) = app.toggle_theme() {
-                            app.error = Some(format!("Failed to toggle theme: {}", e));
-                        } else {
-                            app.success_message = Some("Theme toggled".to_string());
-                            app.success_message_time = Some(std::time::Instant::now());
-                        }
+                        handle_toggle_theme(app);
                     }
                     _ if app.key_matches(KeyAction::OpenSearch, &key) => {
-                        app.input.clear();
-                        app.input_mode = InputMode::SearchMode;
+                        handle_open_search(app);
                     }
                     _ if app.key_matches(KeyAction::ToggleStar, &key) => {
                         if let Some(selected) = app.selected_item {
@@ -344,13 +394,12 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::Help, &key) => {
-                        app.show_help_overlay = true;
-                        app.help_overlay_scroll = 0;
+                        handle_show_help(app);
                     }
                     _ => {}
                 },
                 View::FeedList => match key.code {
-                    // Keep hardcoded: Tab, category keys, delete, tree expand
+                    // Keep hardcoded: Tab for view switching
                     KeyCode::Tab => {
                         if key.modifiers.contains(event::KeyModifiers::SHIFT) {
                             app.view = View::Dashboard;
@@ -360,8 +409,16 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                             app.selected_item = None;
                         }
                     }
-                    KeyCode::Char('d') => {
-                        // Delete selected tree item
+                    // All other FeedList keys are configurable
+                    _ if app.key_matches(KeyAction::Quit, &key) => {
+                        app.view = View::Dashboard;
+                        app.selected_item = None;
+                    }
+                    _ if app.key_matches(KeyAction::Back, &key) => {
+                        app.view = View::Dashboard;
+                        app.selected_item = None;
+                    }
+                    _ if app.key_matches(KeyAction::DeleteFeed, &key) => {
                         if let Some(sel) = app.selected_tree_item {
                             match app.feed_tree.get(sel).cloned() {
                                 Some(TreeItem::Feed(feed_idx, _)) => {
@@ -381,11 +438,14 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                             }
                         }
                     }
-                    KeyCode::Enter | KeyCode::Char(' ') => {
+                    _ if app.key_matches(KeyAction::Select, &key)
+                        || app.key_matches(KeyAction::ToggleExpand, &key) =>
+                    {
                         if let Some(sel) = app.selected_tree_item {
                             match app.feed_tree.get(sel).cloned() {
                                 Some(TreeItem::Feed(feed_idx, _)) => {
-                                    if key.code == KeyCode::Enter {
+                                    // Only Select opens a feed, ToggleExpand is a no-op on feeds
+                                    if app.key_matches(KeyAction::Select, &key) {
                                         app.selected_feed = Some(feed_idx);
                                         app.selected_item = Some(0);
                                         app.view = View::FeedItems;
@@ -401,7 +461,8 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                             }
                         }
                     }
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // OpenCategoryManagement before AssignCategory (modifier ordering)
+                    _ if app.key_matches(KeyAction::OpenCategoryManagement, &key) => {
                         app.view = View::CategoryManagement;
                         app.selected_category = if !app.categories.is_empty() {
                             Some(0)
@@ -409,8 +470,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                             None
                         };
                     }
-                    KeyCode::Char('c') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        // Assign feed to category
+                    _ if app.key_matches(KeyAction::AssignCategory, &key) => {
                         if let Some(sel) = app.selected_tree_item {
                             if let Some(TreeItem::Feed(feed_idx, _)) = app.feed_tree.get(sel) {
                                 if *feed_idx < app.feeds.len() {
@@ -422,35 +482,18 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                             }
                         }
                     }
-                    // Configurable keybindings via match guards
-                    _ if app.key_matches(KeyAction::Quit, &key) => {
-                        app.view = View::Dashboard;
-                        app.selected_item = None;
-                    }
-                    _ if app.key_matches(KeyAction::Back, &key) => {
-                        app.view = View::Dashboard;
-                        app.selected_item = None;
-                    }
                     _ if app.key_matches(KeyAction::AddFeed, &key) => {
                         app.input.clear();
                         app.input_mode = InputMode::InsertUrl;
                     }
                     _ if app.key_matches(KeyAction::OpenSearch, &key) => {
-                        app.input.clear();
-                        app.input_mode = InputMode::SearchMode;
+                        handle_open_search(app);
                     }
                     _ if app.key_matches(KeyAction::Refresh, &key) => {
-                        if !app.refresh_in_progress {
-                            app.refresh_requested = true;
-                        }
+                        handle_refresh(app);
                     }
                     _ if app.key_matches(KeyAction::ToggleTheme, &key) => {
-                        if let Err(e) = app.toggle_theme() {
-                            app.error = Some(format!("Failed to toggle theme: {}", e));
-                        } else {
-                            app.success_message = Some("Theme toggled".to_string());
-                            app.success_message_time = Some(std::time::Instant::now());
-                        }
+                        handle_toggle_theme(app);
                     }
                     _ if app.key_matches(KeyAction::MoveUp, &key) => {
                         if let Some(selected) = app.selected_tree_item {
@@ -490,7 +533,6 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                                     }
                                 }
                                 Some(TreeItem::Category(cat_idx)) => {
-                                    // Mark all feeds in this category as read
                                     let feed_indices: Vec<usize> =
                                         if let Some(category) = app.categories.get(cat_idx) {
                                             let feed_urls: Vec<String> =
@@ -519,8 +561,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::Help, &key) => {
-                        app.show_help_overlay = true;
-                        app.help_overlay_scroll = 0;
+                        handle_show_help(app);
                     }
                     _ => {}
                 },
@@ -539,40 +580,16 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         app.selected_item = None;
                     }
                     _ if app.key_matches(KeyAction::ToggleStar, &key) => {
-                        if let Some(feed_idx) = app.selected_feed {
-                            if let Some(item_idx) = app.selected_item {
-                                match app.toggle_item_starred(feed_idx, item_idx) {
-                                    Ok(is_now_starred) => {
-                                        app.success_message = Some(if is_now_starred {
-                                            "\u{2605} Starred".to_string()
-                                        } else {
-                                            "\u{2606} Unstarred".to_string()
-                                        });
-                                        app.success_message_time = Some(std::time::Instant::now());
-                                    }
-                                    Err(e) => {
-                                        app.error = Some(format!("Failed to toggle star: {}", e));
-                                    }
-                                }
-                            }
-                        }
+                        handle_toggle_star_current(app);
                     }
                     _ if app.key_matches(KeyAction::OpenSearch, &key) => {
-                        app.input.clear();
-                        app.input_mode = InputMode::SearchMode;
+                        handle_open_search(app);
                     }
                     _ if app.key_matches(KeyAction::Refresh, &key) => {
-                        if !app.refresh_in_progress {
-                            app.refresh_requested = true;
-                        }
+                        handle_refresh(app);
                     }
                     _ if app.key_matches(KeyAction::ToggleTheme, &key) => {
-                        if let Err(e) = app.toggle_theme() {
-                            app.error = Some(format!("Failed to toggle theme: {}", e));
-                        } else {
-                            app.success_message = Some("Theme toggled".to_string());
-                            app.success_message_time = Some(std::time::Instant::now());
-                        }
+                        handle_toggle_theme(app);
                     }
                     _ if app.key_matches(KeyAction::MoveUp, &key) => {
                         if let Some(selected) = app.selected_item {
@@ -611,24 +628,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::ToggleRead, &key) => {
-                        if let Some(feed_idx) = app.selected_feed {
-                            if let Some(item_idx) = app.selected_item {
-                                match app.toggle_item_read(feed_idx, item_idx) {
-                                    Ok(is_now_read) => {
-                                        app.success_message = Some(if is_now_read {
-                                            "\u{2713} Marked as read".to_string()
-                                        } else {
-                                            "\u{25CB} Marked as unread".to_string()
-                                        });
-                                        app.success_message_time = Some(std::time::Instant::now());
-                                    }
-                                    Err(e) => {
-                                        app.error =
-                                            Some(format!("Failed to toggle read status: {}", e));
-                                    }
-                                }
-                            }
-                        }
+                        handle_toggle_read_current(app);
                     }
                     _ if app.key_matches(KeyAction::MarkAllRead, &key) => {
                         if let Some(feed_idx) = app.selected_feed {
@@ -645,8 +645,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::Help, &key) => {
-                        app.show_help_overlay = true;
-                        app.help_overlay_scroll = 0;
+                        handle_show_help(app);
                     }
                     _ => {}
                 },
@@ -687,23 +686,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::ToggleStar, &key) => {
-                        if let Some(feed_idx) = app.selected_feed {
-                            if let Some(item_idx) = app.selected_item {
-                                match app.toggle_item_starred(feed_idx, item_idx) {
-                                    Ok(is_now_starred) => {
-                                        app.success_message = Some(if is_now_starred {
-                                            "\u{2605} Starred".to_string()
-                                        } else {
-                                            "\u{2606} Unstarred".to_string()
-                                        });
-                                        app.success_message_time = Some(std::time::Instant::now());
-                                    }
-                                    Err(e) => {
-                                        app.error = Some(format!("Failed to toggle star: {}", e));
-                                    }
-                                }
-                            }
-                        }
+                        handle_toggle_star_current(app);
                     }
                     _ if app.key_matches(KeyAction::Back, &key) => {
                         if app.is_searching {
@@ -718,12 +701,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         app.selected_item = None;
                     }
                     _ if app.key_matches(KeyAction::ToggleTheme, &key) => {
-                        if let Err(e) = app.toggle_theme() {
-                            app.error = Some(format!("Failed to toggle theme: {}", e));
-                        } else {
-                            app.success_message = Some("Theme toggled".to_string());
-                            app.success_message_time = Some(std::time::Instant::now());
-                        }
+                        handle_toggle_theme(app);
                     }
                     _ if app.key_matches(KeyAction::MoveUp, &key) => {
                         app.detail_vertical_scroll = app.detail_vertical_scroll.saturating_sub(1);
@@ -736,9 +714,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::Refresh, &key) => {
-                        if !app.refresh_in_progress {
-                            app.refresh_requested = true;
-                        }
+                        handle_refresh(app);
                     }
                     _ if app.key_matches(KeyAction::OpenInBrowser, &key) => {
                         if let Err(e) = app.open_current_item_in_browser() {
@@ -746,32 +722,13 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::ToggleRead, &key) => {
-                        if let Some(feed_idx) = app.selected_feed {
-                            if let Some(item_idx) = app.selected_item {
-                                match app.toggle_item_read(feed_idx, item_idx) {
-                                    Ok(is_now_read) => {
-                                        app.success_message = Some(if is_now_read {
-                                            "\u{2713} Marked as read".to_string()
-                                        } else {
-                                            "\u{25CB} Marked as unread".to_string()
-                                        });
-                                        app.success_message_time = Some(std::time::Instant::now());
-                                    }
-                                    Err(e) => {
-                                        app.error =
-                                            Some(format!("Failed to toggle read status: {}", e));
-                                    }
-                                }
-                            }
-                        }
+                        handle_toggle_read_current(app);
                     }
                     _ if app.key_matches(KeyAction::OpenSearch, &key) => {
-                        app.input.clear();
-                        app.input_mode = InputMode::SearchMode;
+                        handle_open_search(app);
                     }
                     _ if app.key_matches(KeyAction::Help, &key) => {
-                        app.show_help_overlay = true;
-                        app.help_overlay_scroll = 0;
+                        handle_show_help(app);
                     }
                     _ => {}
                 },
@@ -896,12 +853,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::ToggleTheme, &key) => {
-                        if let Err(e) = app.toggle_theme() {
-                            app.error = Some(format!("Failed to toggle theme: {}", e));
-                        } else {
-                            app.success_message = Some("Theme toggled".to_string());
-                            app.success_message_time = Some(std::time::Instant::now());
-                        }
+                        handle_toggle_theme(app);
                     }
                     _ if app.key_matches(KeyAction::MarkAllRead, &key) => {
                         match app.mark_all_starred_read() {
@@ -916,12 +868,10 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                     _ if app.key_matches(KeyAction::OpenSearch, &key) => {
-                        app.input.clear();
-                        app.input_mode = InputMode::SearchMode;
+                        handle_open_search(app);
                     }
                     _ if app.key_matches(KeyAction::Help, &key) => {
-                        app.show_help_overlay = true;
-                        app.help_overlay_scroll = 0;
+                        handle_show_help(app);
                     }
                     _ => {}
                 },
@@ -944,13 +894,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                             app.category_action = None;
                         }
                         KeyCode::Char('t') => {
-                            // Toggle theme
-                            if let Err(e) = app.toggle_theme() {
-                                app.error = Some(format!("Failed to toggle theme: {}", e));
-                            } else {
-                                app.success_message = Some("Theme toggled".to_string());
-                                app.success_message_time = Some(std::time::Instant::now());
-                            }
+                            handle_toggle_theme(app);
                         }
                         KeyCode::Char('n') => {
                             // Create a new category

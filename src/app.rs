@@ -221,7 +221,7 @@ impl App {
 
         let show_summary = last_session_time.is_some() && has_bookmarks;
 
-        let keybindings = crate::keybindings::build_keybindings(&config.keybindings);
+        let (keybindings, kb_warnings) = crate::keybindings::build_keybindings(&config.keybindings);
 
         let mut app = Self {
             config,
@@ -279,6 +279,10 @@ impl App {
 
         app.update_dashboard();
         app.rebuild_feed_tree();
+
+        if !kb_warnings.is_empty() {
+            app.error = Some(format!("Keybinding config: {}", kb_warnings.join("; ")));
+        }
 
         app
     }
