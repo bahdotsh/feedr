@@ -16,6 +16,8 @@ pub struct Config {
     pub ui: UiConfig,
     #[serde(default)]
     pub default_feeds: Vec<DefaultFeed>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub keybindings: HashMap<String, toml::Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -84,6 +86,9 @@ pub struct DefaultFeed {
     pub category: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    /// Per-feed refresh interval in seconds; None = use global interval
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_interval: Option<u64>,
 }
 
 // Default value functions

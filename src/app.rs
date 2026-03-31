@@ -110,6 +110,35 @@ pub struct App {
     pub compact: bool,             // Whether compact mode is active
     pub discovered_feeds: Vec<crate::feed::DiscoveredFeed>, // Feeds discovered from HTML page
     pub discovered_feed_selection: usize, // Selected index in discovered feeds list
+    pub feed_refresh_intervals: HashMap<String, u64>, // url -> per-feed refresh interval in seconds
+    pub last_feed_refresh: HashMap<String, Instant>, // url -> last refresh time
+    pub show_help_overlay: bool,   // Whether the help overlay is visible
+    pub help_overlay_scroll: u16,  // Scroll position in the help overlay
+    pub extracted_links: Vec<ExtractedLink>,
+    pub show_link_overlay: bool,
+    pub selected_link: usize,
+    pub feed_tree: Vec<TreeItem>,
+    pub selected_tree_item: Option<usize>, // index into feed_tree
+    pub keybindings: crate::keybindings::KeyBindingMap,
+}
+
+#[derive(Clone, Debug)]
+pub enum LinkType {
+    Link,
+    Image,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtractedLink {
+    pub url: String,
+    pub text: String,
+    pub link_type: LinkType,
+}
+
+#[derive(Clone, Debug)]
+pub enum TreeItem {
+    Category(usize),            // index into self.categories
+    Feed(usize, Option<usize>), // feed index, optional parent category index
 }
 
 #[derive(Clone, Debug)]
@@ -176,6 +205,13 @@ impl App {
             .filter_map(|f| f.headers.as_ref().map(|h| (f.url.clone(), h.clone())))
             .collect();
 
+        // Build per-feed refresh intervals from config
+        let feed_refresh_intervals: HashMap<String, u64> = config
+            .default_feeds
+            .iter()
+            .filter_map(|f| f.refresh_interval.map(|interval| (f.url.clone(), interval)))
+            .collect();
+
         // Parse last session time from saved data
         let last_session_time = saved_data
             .last_session_time
@@ -184,6 +220,8 @@ impl App {
             .map(|dt| dt.with_timezone(&Utc));
 
         let show_summary = last_session_time.is_some() && has_bookmarks;
+
+        let (keybindings, kb_warnings) = crate::keybindings::build_keybindings(&config.keybindings);
 
         let mut app = Self {
             config,
@@ -227,11 +265,38 @@ impl App {
             compact: false,
             discovered_feeds: Vec::new(),
             discovered_feed_selection: 0,
+            feed_refresh_intervals,
+            last_feed_refresh: HashMap::new(),
+            show_help_overlay: false,
+            help_overlay_scroll: 0,
+            extracted_links: Vec::new(),
+            show_link_overlay: false,
+            selected_link: 0,
+            feed_tree: Vec::new(),
+            selected_tree_item: None,
+            keybindings,
         };
 
         app.update_dashboard();
+        app.rebuild_feed_tree();
+
+        if !kb_warnings.is_empty() {
+            app.error = Some(format!("Keybinding config: {}", kb_warnings.join("; ")));
+        }
 
         app
+    }
+
+    pub fn key_matches(
+        &self,
+        action: crate::keybindings::KeyAction,
+        key: &crossterm::event::KeyEvent,
+    ) -> bool {
+        if let Some(bindings) = self.keybindings.get(&action) {
+            bindings.iter().any(|b| b.matches(key))
+        } else {
+            false
+        }
     }
 
     pub fn update_compact_mode(&mut self, terminal_height: u16) {
@@ -530,7 +595,7 @@ impl App {
     }
 
     // Generate a unique ID for an item to track read status
-    fn get_item_id(&self, feed_idx: usize, item_idx: usize) -> String {
+    pub(crate) fn get_item_id(&self, feed_idx: usize, item_idx: usize) -> String {
         if let Some(feed) = self.feeds.get(feed_idx) {
             if let Some(item) = feed.items.get(item_idx) {
                 if let Some(link) = &item.link {
@@ -575,6 +640,55 @@ impl App {
     pub fn is_item_read(&self, feed_idx: usize, item_idx: usize) -> bool {
         let item_id = self.get_item_id(feed_idx, item_idx);
         self.read_items.contains(&item_id)
+    }
+
+    /// Mark all currently visible dashboard items as read, returns count marked.
+    pub fn mark_all_dashboard_read(&mut self) -> Result<usize> {
+        let items: Vec<(usize, usize)> = self.active_dashboard_items().to_vec();
+        let mut count = 0;
+        for (feed_idx, item_idx) in &items {
+            let item_id = self.get_item_id(*feed_idx, *item_idx);
+            if !item_id.is_empty() && self.read_items.insert(item_id) {
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.save_data()?;
+        }
+        Ok(count)
+    }
+
+    /// Mark all currently starred items as read, returns count marked.
+    pub fn mark_all_starred_read(&mut self) -> Result<usize> {
+        let starred = self.get_starred_dashboard_items();
+        let mut count = 0;
+        for (feed_idx, item_idx) in &starred {
+            let item_id = self.get_item_id(*feed_idx, *item_idx);
+            if !item_id.is_empty() && self.read_items.insert(item_id) {
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.save_data()?;
+        }
+        Ok(count)
+    }
+
+    /// Mark all items in a specific feed as read, returns count marked.
+    pub fn mark_all_feed_read(&mut self, feed_idx: usize) -> Result<usize> {
+        let mut count = 0;
+        if let Some(feed) = self.feeds.get(feed_idx) {
+            for item_idx in 0..feed.items.len() {
+                let item_id = self.get_item_id(feed_idx, item_idx);
+                if !item_id.is_empty() && self.read_items.insert(item_id) {
+                    count += 1;
+                }
+            }
+        }
+        if count > 0 {
+            self.save_data()?;
+        }
+        Ok(count)
     }
 
     // Toggle an item's starred status and return whether it's now starred
@@ -655,6 +769,7 @@ impl App {
                     self.bookmarks.push(url.to_string());
                 }
                 self.update_dashboard();
+                self.rebuild_feed_tree();
                 self.save_data()?;
                 Ok(AddFeedResult::Added)
             }
@@ -732,6 +847,7 @@ impl App {
 
                 // Update dashboard
                 self.update_dashboard();
+                self.rebuild_feed_tree();
 
                 // Save changes
                 self.save_data()?;
@@ -1014,6 +1130,7 @@ impl App {
 
         // Save categories
         self.save_data()?;
+        self.rebuild_feed_tree();
 
         Ok(())
     }
@@ -1034,6 +1151,7 @@ impl App {
 
         // Save categories
         self.save_data()?;
+        self.rebuild_feed_tree();
 
         Ok(())
     }
@@ -1057,6 +1175,7 @@ impl App {
         if idx < self.categories.len() {
             self.categories[idx].rename(new_name);
             self.save_data()?;
+            self.rebuild_feed_tree();
             Ok(())
         } else {
             Err(anyhow::anyhow!("Invalid category index"))
@@ -1073,6 +1192,7 @@ impl App {
 
         // Save the updated categories
         self.save_data()?;
+        self.rebuild_feed_tree();
 
         Ok(())
     }
@@ -1085,6 +1205,7 @@ impl App {
         let removed = self.categories[category_idx].remove_feed(feed_url);
         if removed {
             self.save_data()?;
+            self.rebuild_feed_tree();
             Ok(())
         } else {
             Err(anyhow::anyhow!("Feed not found in category"))
@@ -1094,9 +1215,54 @@ impl App {
     pub fn toggle_category_expanded(&mut self, idx: usize) -> Result<()> {
         if idx < self.categories.len() {
             self.categories[idx].toggle_expanded();
+            self.rebuild_feed_tree();
             Ok(())
         } else {
             Err(anyhow::anyhow!("Invalid category index"))
+        }
+    }
+
+    pub fn rebuild_feed_tree(&mut self) {
+        self.feed_tree.clear();
+        let mut categorized_feeds: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        // Add categories and their feeds
+        for (cat_idx, category) in self.categories.iter().enumerate() {
+            self.feed_tree.push(TreeItem::Category(cat_idx));
+            if category.expanded {
+                for (feed_idx, feed) in self.feeds.iter().enumerate() {
+                    if category.feeds.contains(&feed.url) {
+                        self.feed_tree.push(TreeItem::Feed(feed_idx, Some(cat_idx)));
+                        categorized_feeds.insert(feed.url.clone());
+                    }
+                }
+            } else {
+                // Still track which feeds are categorized even when collapsed
+                for feed in &self.feeds {
+                    if category.feeds.contains(&feed.url) {
+                        categorized_feeds.insert(feed.url.clone());
+                    }
+                }
+            }
+        }
+
+        // Add uncategorized feeds at the bottom
+        for (feed_idx, feed) in self.feeds.iter().enumerate() {
+            if !categorized_feeds.contains(&feed.url) {
+                self.feed_tree.push(TreeItem::Feed(feed_idx, None));
+            }
+        }
+
+        // Clamp selection
+        if let Some(selected) = self.selected_tree_item {
+            if selected >= self.feed_tree.len() {
+                self.selected_tree_item = if self.feed_tree.is_empty() {
+                    None
+                } else {
+                    Some(self.feed_tree.len() - 1)
+                };
+            }
         }
     }
 
@@ -1141,21 +1307,44 @@ impl App {
 
     /// Check if auto-refresh should trigger
     pub fn should_auto_refresh(&self) -> bool {
-        if !self.config.general.refresh_enabled || self.config.general.auto_refresh_interval == 0 {
-            return false;
-        }
-
         if self.refresh_in_progress {
             return false;
         }
 
-        if let Some(last_refresh) = self.last_refresh {
-            let elapsed = last_refresh.elapsed().as_secs();
-            elapsed >= self.config.general.auto_refresh_interval
-        } else {
-            // Never refreshed, so we should refresh
-            true
+        // Check global refresh
+        if self.config.general.refresh_enabled && self.config.general.auto_refresh_interval > 0 {
+            if let Some(last_refresh) = self.last_refresh {
+                if last_refresh.elapsed().as_secs() >= self.config.general.auto_refresh_interval {
+                    return true;
+                }
+            } else {
+                // Never refreshed, so we should refresh
+                return true;
+            }
         }
+
+        // Check per-feed intervals — these act as trigger thresholds for a
+        // global refresh (all feeds are refreshed together). True selective
+        // per-feed refresh is not yet implemented.
+        for (url, &interval) in &self.feed_refresh_intervals {
+            if let Some(last) = self.last_feed_refresh.get(url) {
+                if last.elapsed().as_secs() >= interval {
+                    return true;
+                }
+            } else {
+                // Never refreshed this feed individually — check global last refresh
+                if let Some(last) = self.last_refresh {
+                    if last.elapsed().as_secs() >= interval {
+                        return true;
+                    }
+                } else {
+                    // Never refreshed at all, trigger refresh
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Extract domain from URL (e.g., "reddit.com" from "https://www.reddit.com/r/rust/.rss")
@@ -1261,6 +1450,104 @@ impl App {
         self.config.save()?;
 
         Ok(())
+    }
+
+    pub fn extract_links_from_current_item(&mut self) {
+        use scraper::{Html, Selector};
+
+        self.extracted_links.clear();
+        self.selected_link = 0;
+
+        let description = if let Some(feed_idx) = self.selected_feed {
+            if let Some(item_idx) = self.selected_item {
+                self.feeds
+                    .get(feed_idx)
+                    .and_then(|f| f.items.get(item_idx))
+                    .and_then(|item| item.description.as_ref())
+                    .cloned()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let Some(html_content) = description else {
+            return;
+        };
+
+        let base_url = self
+            .selected_feed
+            .and_then(|fi| {
+                self.selected_item.and_then(|ii| {
+                    self.feeds
+                        .get(fi)
+                        .and_then(|f| f.items.get(ii).and_then(|item| item.link.as_ref()))
+                })
+            })
+            .and_then(|link| url::Url::parse(link).ok());
+
+        let document = Html::parse_document(&html_content);
+        let mut seen_urls = std::collections::HashSet::new();
+
+        // Extract links
+        if let Ok(selector) = Selector::parse("a[href]") {
+            for element in document.select(&selector) {
+                if let Some(href) = element.value().attr("href") {
+                    let resolved = if let Some(base) = &base_url {
+                        base.join(href)
+                            .map(|u| u.to_string())
+                            .unwrap_or_else(|_| href.to_string())
+                    } else {
+                        href.to_string()
+                    };
+                    if seen_urls.insert(resolved.clone()) {
+                        let text = element.text().collect::<String>().trim().to_string();
+                        self.extracted_links.push(ExtractedLink {
+                            url: resolved,
+                            text: if text.is_empty() {
+                                "(no text)".to_string()
+                            } else {
+                                text
+                            },
+                            link_type: LinkType::Link,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Extract images
+        if let Ok(selector) = Selector::parse("img[src]") {
+            for element in document.select(&selector) {
+                if let Some(src) = element.value().attr("src") {
+                    let resolved = if let Some(base) = &base_url {
+                        base.join(src)
+                            .map(|u| u.to_string())
+                            .unwrap_or_else(|_| src.to_string())
+                    } else {
+                        src.to_string()
+                    };
+                    if seen_urls.insert(resolved.clone()) {
+                        let alt = element.value().attr("alt").unwrap_or("").trim().to_string();
+                        self.extracted_links.push(ExtractedLink {
+                            url: resolved,
+                            text: if alt.is_empty() {
+                                "(image)".to_string()
+                            } else {
+                                alt
+                            },
+                            link_type: LinkType::Image,
+                        });
+                    }
+                }
+            }
+        }
+
+        self.show_link_overlay = !self.extracted_links.is_empty();
+        if self.extracted_links.is_empty() {
+            self.error = Some("No links or images found in this article".to_string());
+        }
     }
 }
 
@@ -1513,5 +1800,216 @@ mod tests {
         // Should not refresh when in progress
         app.refresh_in_progress = true;
         assert!(!app.should_auto_refresh());
+    }
+
+    #[test]
+    fn test_should_auto_refresh_per_feed_interval() {
+        let mut app = App::new();
+        // Disable global refresh
+        app.config.general.refresh_enabled = false;
+        app.config.general.auto_refresh_interval = 0;
+
+        // Add a per-feed interval
+        app.feed_refresh_intervals
+            .insert("https://example.com/feed".to_string(), 60);
+
+        // Never refreshed — should trigger
+        assert!(app.should_auto_refresh());
+
+        // Mark as recently refreshed globally
+        app.last_refresh = Some(std::time::Instant::now());
+        assert!(!app.should_auto_refresh());
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_uncategorized_only() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        app.rebuild_feed_tree();
+
+        // Should have exactly 2 uncategorized feed entries
+        assert_eq!(app.feed_tree.len(), 2);
+        assert!(matches!(app.feed_tree[0], TreeItem::Feed(0, None)));
+        assert!(matches!(app.feed_tree[1], TreeItem::Feed(1, None)));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_with_category() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        let mut cat = FeedCategory::new("Tech");
+        cat.add_feed("https://example.com/feed1");
+        app.categories.push(cat);
+        app.rebuild_feed_tree();
+
+        // Category node + expanded feed + 1 uncategorized feed = 3
+        assert_eq!(app.feed_tree.len(), 3);
+        assert!(matches!(app.feed_tree[0], TreeItem::Category(0)));
+        assert!(matches!(app.feed_tree[1], TreeItem::Feed(0, Some(0))));
+        assert!(matches!(app.feed_tree[2], TreeItem::Feed(1, None)));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_collapsed_category() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        let mut cat = FeedCategory::new("Tech");
+        cat.add_feed("https://example.com/feed1");
+        cat.expanded = false;
+        app.categories.push(cat);
+        app.rebuild_feed_tree();
+
+        // Category node + 1 uncategorized (feed1 is hidden, feed2 uncategorized)
+        assert_eq!(app.feed_tree.len(), 2);
+        assert!(matches!(app.feed_tree[0], TreeItem::Category(0)));
+        assert!(matches!(app.feed_tree[1], TreeItem::Feed(1, None)));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_clamps_selection() {
+        let mut app = make_test_app();
+        app.categories.clear();
+        app.rebuild_feed_tree();
+        // Set selection beyond bounds
+        app.selected_tree_item = Some(100);
+        app.rebuild_feed_tree();
+        assert_eq!(app.selected_tree_item, Some(app.feed_tree.len() - 1));
+    }
+
+    #[test]
+    fn test_rebuild_feed_tree_empty() {
+        let mut app = App::new();
+        app.feeds.clear();
+        app.categories.clear();
+        app.selected_tree_item = Some(5);
+        app.rebuild_feed_tree();
+        assert!(app.feed_tree.is_empty());
+        assert_eq!(app.selected_tree_item, None);
+    }
+
+    #[test]
+    fn test_mark_all_dashboard_read() {
+        let mut app = make_test_app();
+        app.read_items.clear();
+        // All 3 items should be unread initially
+        assert!(!app.is_item_read(0, 0));
+        assert!(!app.is_item_read(0, 1));
+        assert!(!app.is_item_read(1, 0));
+
+        let count = app.mark_all_dashboard_read().unwrap();
+        assert_eq!(count, 3);
+
+        assert!(app.is_item_read(0, 0));
+        assert!(app.is_item_read(0, 1));
+        assert!(app.is_item_read(1, 0));
+
+        // Calling again should mark 0 new items
+        let count = app.mark_all_dashboard_read().unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_mark_all_feed_read() {
+        let mut app = make_test_app();
+        app.read_items.clear();
+        let count = app.mark_all_feed_read(0).unwrap();
+        assert_eq!(count, 2); // Feed 0 has 2 items
+
+        assert!(app.is_item_read(0, 0));
+        assert!(app.is_item_read(0, 1));
+        assert!(!app.is_item_read(1, 0)); // Feed 1 untouched
+    }
+
+    #[test]
+    fn test_mark_all_feed_read_invalid_index() {
+        let mut app = make_test_app();
+        let count = app.mark_all_feed_read(999).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_mark_all_starred_read() {
+        let mut app = make_test_app();
+        app.read_items.clear();
+        app.starred_items.clear();
+        // Star two items
+        app.toggle_item_starred(0, 0).unwrap();
+        app.toggle_item_starred(1, 0).unwrap();
+
+        let count = app.mark_all_starred_read().unwrap();
+        assert_eq!(count, 2);
+        assert!(app.is_item_read(0, 0));
+        assert!(app.is_item_read(1, 0));
+        assert!(!app.is_item_read(0, 1)); // Unstarred item untouched
+    }
+
+    #[test]
+    fn test_extract_links_from_html() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+
+        // Set HTML content with links and images
+        app.feeds[0].items[0].description = Some(
+            r#"<p>Check out <a href="https://example.com/page">this page</a>
+            and <a href="https://example.com/other">another link</a></p>
+            <img src="https://example.com/image.png" alt="test image">"#
+                .to_string(),
+        );
+
+        app.extract_links_from_current_item();
+
+        assert!(app.show_link_overlay);
+        assert_eq!(app.extracted_links.len(), 3);
+        assert_eq!(app.extracted_links[0].url, "https://example.com/page");
+        assert_eq!(app.extracted_links[0].text, "this page");
+        assert!(matches!(app.extracted_links[0].link_type, LinkType::Link));
+        assert_eq!(app.extracted_links[2].url, "https://example.com/image.png");
+        assert!(matches!(app.extracted_links[2].link_type, LinkType::Image));
+    }
+
+    #[test]
+    fn test_extract_links_deduplicates() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+
+        app.feeds[0].items[0].description = Some(
+            r#"<a href="https://example.com">link1</a>
+            <a href="https://example.com">link2</a>"#
+                .to_string(),
+        );
+
+        app.extract_links_from_current_item();
+
+        assert_eq!(app.extracted_links.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_links_no_content() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+        app.feeds[0].items[0].description = None;
+
+        app.extract_links_from_current_item();
+
+        assert!(!app.show_link_overlay);
+        assert!(app.extracted_links.is_empty());
+    }
+
+    #[test]
+    fn test_extract_links_resolves_relative_urls() {
+        let mut app = make_test_app();
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+        // Item has a base URL via its link
+        app.feeds[0].items[0].link = Some("https://example.com/article/123".to_string());
+        app.feeds[0].items[0].description = Some(r#"<a href="/about">About</a>"#.to_string());
+
+        app.extract_links_from_current_item();
+
+        assert_eq!(app.extracted_links.len(), 1);
+        assert_eq!(app.extracted_links[0].url, "https://example.com/about");
     }
 }
