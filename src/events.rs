@@ -23,45 +23,43 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
         }
         // Help overlay consumes all keys
         if app.show_help_overlay {
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
-                    app.show_help_overlay = false;
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    app.help_overlay_scroll = app.help_overlay_scroll.saturating_add(1);
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    app.help_overlay_scroll = app.help_overlay_scroll.saturating_sub(1);
-                }
-                _ => {
-                    app.show_help_overlay = false;
-                }
+            if key.code == KeyCode::Esc
+                || app.key_matches(KeyAction::Help, &key)
+                || app.key_matches(KeyAction::Quit, &key)
+                || app.key_matches(KeyAction::Back, &key)
+            {
+                app.show_help_overlay = false;
+            } else if app.key_matches(KeyAction::MoveDown, &key) {
+                app.help_overlay_scroll = app.help_overlay_scroll.saturating_add(1);
+            } else if app.key_matches(KeyAction::MoveUp, &key) {
+                app.help_overlay_scroll = app.help_overlay_scroll.saturating_sub(1);
+            } else {
+                app.show_help_overlay = false;
             }
             return Ok(false);
         }
         // Link overlay consumes all keys
         if app.show_link_overlay {
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('l') => {
-                    app.show_link_overlay = false;
+            if key.code == KeyCode::Esc
+                || app.key_matches(KeyAction::Quit, &key)
+                || app.key_matches(KeyAction::ExtractLinks, &key)
+            {
+                app.show_link_overlay = false;
+            } else if app.key_matches(KeyAction::MoveDown, &key) {
+                if !app.extracted_links.is_empty() {
+                    app.selected_link =
+                        (app.selected_link + 1).min(app.extracted_links.len().saturating_sub(1));
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if !app.extracted_links.is_empty() {
-                        app.selected_link =
-                            (app.selected_link + 1).min(app.extracted_links.len() - 1);
+            } else if app.key_matches(KeyAction::MoveUp, &key) {
+                app.selected_link = app.selected_link.saturating_sub(1);
+            } else if app.key_matches(KeyAction::Select, &key)
+                || app.key_matches(KeyAction::OpenInBrowser, &key)
+            {
+                if let Some(link) = app.extracted_links.get(app.selected_link) {
+                    if let Err(e) = open::that(&link.url) {
+                        app.error = Some(format!("Failed to open link: {}", e));
                     }
                 }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    app.selected_link = app.selected_link.saturating_sub(1);
-                }
-                KeyCode::Enter | KeyCode::Char('o') => {
-                    if let Some(link) = app.extracted_links.get(app.selected_link) {
-                        if let Err(e) = open::that(&link.url) {
-                            app.error = Some(format!("Failed to open link: {}", e));
-                        }
-                    }
-                }
-                _ => {}
             }
             return Ok(false);
         }
@@ -563,9 +561,10 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
                     }
                     _ if app.key_matches(KeyAction::MoveDown, &key) => {
                         if let Some(selected) = app.selected_item {
-                            let feed = app.current_feed().unwrap();
-                            if selected < feed.items.len() - 1 {
-                                app.selected_item = Some(selected + 1);
+                            if let Some(feed) = app.current_feed() {
+                                if selected < feed.items.len().saturating_sub(1) {
+                                    app.selected_item = Some(selected + 1);
+                                }
                             }
                         }
                     }

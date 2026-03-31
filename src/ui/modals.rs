@@ -1,5 +1,5 @@
 use crate::app::{App, InputMode, LinkType, TimeFilter, View};
-use crate::ui::utils::centered_rect_with_min;
+use crate::ui::utils::{centered_rect_with_min, truncate_str};
 use crate::ui::ColorScheme;
 use ratatui::{
     backend::Backend,
@@ -756,11 +756,7 @@ pub(super) fn render_link_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
 
         // Truncate URL for display
         let max_url_len = area.width.saturating_sub(10) as usize;
-        let display_url = if link.url.len() > max_url_len {
-            format!("{}...", &link.url[..max_url_len.saturating_sub(3)])
-        } else {
-            link.url.clone()
-        };
+        let display_url = truncate_str(&link.url, max_url_len);
 
         lines.push(Line::from(vec![
             Span::styled(prefix, Style::default().fg(colors.highlight)),

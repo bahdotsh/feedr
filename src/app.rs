@@ -1303,7 +1303,9 @@ impl App {
             }
         }
 
-        // Check per-feed intervals
+        // Check per-feed intervals — these act as trigger thresholds for a
+        // global refresh (all feeds are refreshed together). True selective
+        // per-feed refresh is not yet implemented.
         for (url, &interval) in &self.feed_refresh_intervals {
             if let Some(last) = self.last_feed_refresh.get(url) {
                 if last.elapsed().as_secs() >= interval {

@@ -1,9 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum KeyAction {
     // Global
     Quit,
@@ -44,6 +43,48 @@ pub enum KeyAction {
     // Tab
     NextTab,
     PrevTab,
+}
+
+impl FromStr for KeyAction {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "quit" => Ok(Self::Quit),
+            "force_quit" => Ok(Self::ForceQuit),
+            "back" => Ok(Self::Back),
+            "home" => Ok(Self::Home),
+            "toggle_theme" => Ok(Self::ToggleTheme),
+            "refresh" => Ok(Self::Refresh),
+            "help" => Ok(Self::Help),
+            "open_search" => Ok(Self::OpenSearch),
+            "move_up" => Ok(Self::MoveUp),
+            "move_down" => Ok(Self::MoveDown),
+            "page_up" => Ok(Self::PageUp),
+            "page_down" => Ok(Self::PageDown),
+            "jump_top" => Ok(Self::JumpTop),
+            "jump_bottom" => Ok(Self::JumpBottom),
+            "select" => Ok(Self::Select),
+            "add_feed" => Ok(Self::AddFeed),
+            "delete_feed" => Ok(Self::DeleteFeed),
+            "toggle_read" => Ok(Self::ToggleRead),
+            "toggle_star" => Ok(Self::ToggleStar),
+            "mark_all_read" => Ok(Self::MarkAllRead),
+            "open_in_browser" => Ok(Self::OpenInBrowser),
+            "toggle_preview" => Ok(Self::TogglePreview),
+            "open_filter" => Ok(Self::OpenFilter),
+            "cycle_category" => Ok(Self::CycleCategory),
+            "open_category_management" => Ok(Self::OpenCategoryManagement),
+            "assign_category" => Ok(Self::AssignCategory),
+            "extract_links" => Ok(Self::ExtractLinks),
+            "scroll_preview_up" => Ok(Self::ScrollPreviewUp),
+            "scroll_preview_down" => Ok(Self::ScrollPreviewDown),
+            "toggle_expand" => Ok(Self::ToggleExpand),
+            "next_tab" => Ok(Self::NextTab),
+            "prev_tab" => Ok(Self::PrevTab),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -300,12 +341,10 @@ pub fn build_keybindings(config_keybindings: &HashMap<String, toml::Value>) -> K
     let mut map = default_keybindings();
 
     for (action_str, value) in config_keybindings {
-        // Parse action name via serde_json roundtrip
-        let action: KeyAction =
-            match serde_json::from_value(serde_json::Value::String(action_str.clone())) {
-                Ok(a) => a,
-                Err(_) => continue, // Unknown action, skip
-            };
+        let action: KeyAction = match action_str.parse() {
+            Ok(a) => a,
+            Err(_) => continue, // Unknown action, skip
+        };
 
         // Parse key bindings
         let keys: Vec<String> = match value {
