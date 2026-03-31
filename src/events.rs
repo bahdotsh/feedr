@@ -880,20 +880,16 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
                         }
                     }
                     _ if app.key_matches(KeyAction::MarkAllRead, &key) => {
-                        let starred = app.get_starred_dashboard_items();
-                        let mut count = 0;
-                        for &(feed_idx, item_idx) in &starred {
-                            let item_id = app.get_item_id(feed_idx, item_idx);
-                            if !item_id.is_empty() && app.read_items.insert(item_id) {
-                                count += 1;
+                        match app.mark_all_starred_read() {
+                            Ok(count) => {
+                                app.success_message =
+                                    Some(format!("\u{2713} Marked {} items as read", count));
+                                app.success_message_time = Some(std::time::Instant::now());
+                            }
+                            Err(e) => {
+                                app.error = Some(format!("Failed to mark all read: {}", e));
                             }
                         }
-                        if count > 0 {
-                            let _ = app.save_data();
-                        }
-                        app.success_message =
-                            Some(format!("\u{2713} Marked {} items as read", count));
-                        app.success_message_time = Some(std::time::Instant::now());
                     }
                     _ if app.key_matches(KeyAction::OpenSearch, &key) => {
                         app.input.clear();

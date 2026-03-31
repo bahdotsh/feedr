@@ -654,6 +654,22 @@ impl App {
         Ok(count)
     }
 
+    /// Mark all currently starred items as read, returns count marked.
+    pub fn mark_all_starred_read(&mut self) -> Result<usize> {
+        let starred = self.get_starred_dashboard_items();
+        let mut count = 0;
+        for (feed_idx, item_idx) in &starred {
+            let item_id = self.get_item_id(*feed_idx, *item_idx);
+            if !item_id.is_empty() && self.read_items.insert(item_id) {
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.save_data()?;
+        }
+        Ok(count)
+    }
+
     /// Mark all items in a specific feed as read, returns count marked.
     pub fn mark_all_feed_read(&mut self, feed_idx: usize) -> Result<usize> {
         let mut count = 0;

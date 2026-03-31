@@ -1,4 +1,5 @@
 use crate::app::{App, InputMode, LinkType, TimeFilter, View};
+use crate::keybindings::{key_display, KeyAction};
 use crate::ui::utils::{centered_rect_with_min, truncate_str};
 use crate::ui::ColorScheme;
 use ratatui::{
@@ -578,15 +579,21 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
         sep_style,
     ));
 
+    let kd = |action: &KeyAction| key_display(action, &app.keybindings);
+
     // Global section
     lines.push(Line::from(Span::styled("  Global", section_style)));
     lines.push(Line::from(""));
-    add_key("Ctrl+Q", "Quit from any view", &mut lines);
-    add_key("?", "Show this help", &mut lines);
-    add_key("t", "Toggle theme (dark/light)", &mut lines);
-    add_key("r", "Refresh all feeds", &mut lines);
-    add_key("Tab", "Next view", &mut lines);
-    add_key("Shift+Tab", "Previous view", &mut lines);
+    add_key(&kd(&KeyAction::ForceQuit), "Quit from any view", &mut lines);
+    add_key(&kd(&KeyAction::Help), "Show this help", &mut lines);
+    add_key(
+        &kd(&KeyAction::ToggleTheme),
+        "Toggle theme (dark/light)",
+        &mut lines,
+    );
+    add_key(&kd(&KeyAction::Refresh), "Refresh all feeds", &mut lines);
+    add_key(&kd(&KeyAction::NextTab), "Next view", &mut lines);
+    add_key(&kd(&KeyAction::PrevTab), "Previous view", &mut lines);
     lines.push(Line::from(""));
     lines.push(separator.clone());
     lines.push(Line::from(""));
@@ -596,92 +603,202 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
         View::Dashboard => {
             lines.push(Line::from(Span::styled("  Dashboard", section_style)));
             lines.push(Line::from(""));
-            add_key("j/k or ↑/↓", "Navigate items", &mut lines);
-            add_key("Shift+J/K", "Scroll preview pane", &mut lines);
-            add_key("Enter", "View article detail", &mut lines);
-            add_key("o", "Open in browser", &mut lines);
-            add_key("Space", "Toggle read/unread", &mut lines);
-            add_key("s", "Star/unstar article", &mut lines);
-            add_key("p", "Toggle preview pane", &mut lines);
-            add_key("a", "Add new feed", &mut lines);
-            add_key("f", "Open filter menu", &mut lines);
-            add_key("m", "Mark all visible as read", &mut lines);
-            add_key("c", "Cycle category filter", &mut lines);
-            add_key("/", "Search across all feeds", &mut lines);
-            add_key("Ctrl+C", "Manage categories", &mut lines);
-            add_key("q", "Quit", &mut lines);
+            add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
+            add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
+            add_key(
+                &format!("Shift+{}", kd(&KeyAction::ScrollPreviewUp)),
+                "Scroll preview pane",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::Select), "View article detail", &mut lines);
+            add_key(
+                &kd(&KeyAction::OpenInBrowser),
+                "Open in browser",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::ToggleRead),
+                "Toggle read/unread",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::ToggleStar),
+                "Star/unstar article",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::TogglePreview),
+                "Toggle preview pane",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::AddFeed), "Add new feed", &mut lines);
+            add_key(&kd(&KeyAction::OpenFilter), "Open filter menu", &mut lines);
+            add_key(
+                &kd(&KeyAction::MarkAllRead),
+                "Mark all visible as read",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::CycleCategory),
+                "Cycle category filter",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::OpenSearch),
+                "Search across all feeds",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::OpenCategoryManagement),
+                "Manage categories",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::Quit), "Quit", &mut lines);
         }
         View::FeedList => {
             lines.push(Line::from(Span::styled("  Feeds", section_style)));
             lines.push(Line::from(""));
+            add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
+            add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
             add_key(
-                "j/k or \u{2191}/\u{2193}",
-                "Navigate feeds & categories",
+                &kd(&KeyAction::Select),
+                "Open feed / expand category",
                 &mut lines,
             );
-            add_key("Enter", "Open feed / expand category", &mut lines);
-            add_key("Space", "Expand/collapse category", &mut lines);
-            add_key("a", "Add new feed", &mut lines);
-            add_key("d", "Delete feed or category", &mut lines);
-            add_key("m", "Mark feed/category as read", &mut lines);
-            add_key("c", "Assign feed to category", &mut lines);
-            add_key("Ctrl+C", "Manage categories", &mut lines);
-            add_key("/", "Search", &mut lines);
-            add_key("q", "Back to Dashboard", &mut lines);
+            add_key(
+                &kd(&KeyAction::ToggleExpand),
+                "Expand/collapse category",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::AddFeed), "Add new feed", &mut lines);
+            add_key(
+                &kd(&KeyAction::DeleteFeed),
+                "Delete feed or category",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::MarkAllRead),
+                "Mark feed/category as read",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::AssignCategory),
+                "Assign feed to category",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::OpenCategoryManagement),
+                "Manage categories",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::OpenSearch), "Search", &mut lines);
+            add_key(&kd(&KeyAction::Quit), "Back to Dashboard", &mut lines);
         }
         View::FeedItems => {
             lines.push(Line::from(Span::styled("  Feed Items", section_style)));
             lines.push(Line::from(""));
-            add_key("j/k or ↑/↓", "Navigate items", &mut lines);
-            add_key("Enter", "View article detail", &mut lines);
-            add_key("o", "Open in browser", &mut lines);
-            add_key("Space", "Toggle read/unread", &mut lines);
-            add_key("s", "Star/unstar", &mut lines);
-            add_key("m", "Mark all as read", &mut lines);
-            add_key("/", "Search", &mut lines);
-            add_key("h/Esc", "Back to Feeds", &mut lines);
-            add_key("Home", "Back to Dashboard", &mut lines);
-            add_key("q", "Back to Feeds", &mut lines);
+            add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
+            add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
+            add_key(&kd(&KeyAction::Select), "View article detail", &mut lines);
+            add_key(
+                &kd(&KeyAction::OpenInBrowser),
+                "Open in browser",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::ToggleRead),
+                "Toggle read/unread",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::ToggleStar), "Star/unstar", &mut lines);
+            add_key(&kd(&KeyAction::MarkAllRead), "Mark all as read", &mut lines);
+            add_key(&kd(&KeyAction::OpenSearch), "Search", &mut lines);
+            add_key(&kd(&KeyAction::Back), "Back to Feeds", &mut lines);
+            add_key(&kd(&KeyAction::Home), "Back to Dashboard", &mut lines);
+            add_key(&kd(&KeyAction::Quit), "Back to Feeds", &mut lines);
         }
         View::FeedItemDetail => {
             lines.push(Line::from(Span::styled("  Article Detail", section_style)));
             lines.push(Line::from(""));
-            add_key("j/k or ↑/↓", "Scroll content", &mut lines);
-            add_key("PgUp/PgDn", "Scroll fast (10 lines)", &mut lines);
-            add_key("Ctrl+U/D", "Scroll fast (10 lines)", &mut lines);
-            add_key("g", "Jump to top", &mut lines);
-            add_key("G/End", "Jump to bottom", &mut lines);
-            add_key("o", "Open in browser", &mut lines);
-            add_key("Space", "Toggle read/unread", &mut lines);
-            add_key("s", "Star/unstar", &mut lines);
-            add_key("l", "Extract links/images", &mut lines);
-            add_key("/", "Search across all feeds", &mut lines);
-            add_key("h/Esc", "Back", &mut lines);
-            add_key("Home", "Back to Dashboard", &mut lines);
-            add_key("q", "Back", &mut lines);
+            add_key(&kd(&KeyAction::MoveUp), "Scroll up", &mut lines);
+            add_key(&kd(&KeyAction::MoveDown), "Scroll down", &mut lines);
+            add_key(
+                &kd(&KeyAction::PageUp),
+                "Scroll fast up (10 lines)",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::PageDown),
+                "Scroll fast down (10 lines)",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::JumpTop), "Jump to top", &mut lines);
+            add_key(&kd(&KeyAction::JumpBottom), "Jump to bottom", &mut lines);
+            add_key(
+                &kd(&KeyAction::OpenInBrowser),
+                "Open in browser",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::ToggleRead),
+                "Toggle read/unread",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::ToggleStar), "Star/unstar", &mut lines);
+            add_key(
+                &kd(&KeyAction::ExtractLinks),
+                "Extract links/images",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::OpenSearch),
+                "Search across all feeds",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::Back), "Back", &mut lines);
+            add_key(&kd(&KeyAction::Home), "Back to Dashboard", &mut lines);
+            add_key(&kd(&KeyAction::Quit), "Back", &mut lines);
         }
         View::Starred => {
             lines.push(Line::from(Span::styled("  Starred", section_style)));
             lines.push(Line::from(""));
-            add_key("j/k or ↑/↓", "Navigate starred items", &mut lines);
-            add_key("Enter", "View article detail", &mut lines);
-            add_key("o", "Open in browser", &mut lines);
-            add_key("Space", "Toggle read/unread", &mut lines);
-            add_key("s", "Unstar article", &mut lines);
-            add_key("m", "Mark all as read", &mut lines);
-            add_key("/", "Search across all feeds", &mut lines);
-            add_key("q", "Back to Dashboard", &mut lines);
+            add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
+            add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
+            add_key(&kd(&KeyAction::Select), "View article detail", &mut lines);
+            add_key(
+                &kd(&KeyAction::OpenInBrowser),
+                "Open in browser",
+                &mut lines,
+            );
+            add_key(
+                &kd(&KeyAction::ToggleRead),
+                "Toggle read/unread",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::ToggleStar), "Unstar article", &mut lines);
+            add_key(&kd(&KeyAction::MarkAllRead), "Mark all as read", &mut lines);
+            add_key(
+                &kd(&KeyAction::OpenSearch),
+                "Search across all feeds",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::Quit), "Back to Dashboard", &mut lines);
         }
         View::CategoryManagement => {
             lines.push(Line::from(Span::styled("  Categories", section_style)));
             lines.push(Line::from(""));
-            add_key("j/k or ↑/↓", "Navigate categories", &mut lines);
+            add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
+            add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
             add_key("n", "Create new category", &mut lines);
             add_key("e", "Rename category", &mut lines);
-            add_key("d", "Delete category", &mut lines);
-            add_key("Space", "Expand/collapse", &mut lines);
-            add_key("Enter", "Assign feed (when adding)", &mut lines);
-            add_key("Esc/q", "Back to Feeds", &mut lines);
+            add_key(&kd(&KeyAction::DeleteFeed), "Delete category", &mut lines);
+            add_key(&kd(&KeyAction::ToggleExpand), "Expand/collapse", &mut lines);
+            add_key(
+                &kd(&KeyAction::Select),
+                "Assign feed (when adding)",
+                &mut lines,
+            );
+            add_key(&kd(&KeyAction::Quit), "Back to Feeds", &mut lines);
         }
         View::Summary => {
             lines.push(Line::from(Span::styled("  What's New", section_style)));
@@ -695,13 +812,19 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("    ", desc_style),
-        Span::styled("Esc/?/q", key_style),
-        Span::styled("  Dismiss this help", desc_style),
+        Span::styled(
+            format!(
+                "{:<16}",
+                format!("Esc/{}/{}", kd(&KeyAction::Help), kd(&KeyAction::Quit))
+            ),
+            key_style,
+        ),
+        Span::styled("Dismiss this help", desc_style),
     ]));
     lines.push(Line::from(vec![
         Span::styled("    ", desc_style),
-        Span::styled("j/k", key_style),
-        Span::styled("          Scroll help", desc_style),
+        Span::styled(format!("{:<16}", kd(&KeyAction::MoveDown)), key_style),
+        Span::styled("Scroll help", desc_style),
     ]));
 
     let paragraph = Paragraph::new(lines)
@@ -789,23 +912,32 @@ pub(super) fn render_link_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
         }
     }
 
+    let kd = |action: &KeyAction| key_display(action, &app.keybindings);
     let help_line = Line::from(vec![
         Span::styled(
-            "j/k",
+            kd(&KeyAction::MoveDown),
             Style::default()
                 .fg(colors.highlight)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(": Navigate  ", Style::default().fg(colors.text)),
         Span::styled(
-            "Enter/o",
+            format!(
+                "{}/{}",
+                kd(&KeyAction::Select),
+                kd(&KeyAction::OpenInBrowser)
+            ),
             Style::default()
                 .fg(colors.highlight)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(": Open  ", Style::default().fg(colors.text)),
         Span::styled(
-            "Esc/q/l",
+            format!(
+                "Esc/{}/{}",
+                kd(&KeyAction::Quit),
+                kd(&KeyAction::ExtractLinks)
+            ),
             Style::default()
                 .fg(colors.highlight)
                 .add_modifier(Modifier::BOLD),

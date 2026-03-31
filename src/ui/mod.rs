@@ -538,18 +538,68 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                     }
                 }
                 View::CategoryManagement => {
-                    "n: New category | e: Edit | d: Delete | SPACE: Toggle feeds | c: Add selected feed | t: Theme | ESC/q: Back".to_string()
+                    format!(
+                        "n: New category | e: Edit | d: Delete | {}: Toggle feeds | c: Add selected feed | {}: Theme | ESC/{}: Back",
+                        key_display(&KeyAction::ToggleExpand, &app.keybindings),
+                        key_display(&KeyAction::ToggleTheme, &app.keybindings),
+                        key_display(&KeyAction::Quit, &app.keybindings),
+                    )
                 }
                 View::FeedItems => {
-                    "h/esc/q: back | home: dashboard | enter: view | s: Star | Space: Toggle read | o: open | /: search | t: theme | Ctrl+Q: quit".to_string()
+                    format!(
+                        "{}/{}: Navigate | {}: View | {}: Star | {}: Toggle read | {}: Mark all read | {}: Open | {}: Search | {}: Theme | {}: Back | {}: Quit",
+                        key_display(&KeyAction::MoveUp, &app.keybindings),
+                        key_display(&KeyAction::MoveDown, &app.keybindings),
+                        key_display(&KeyAction::Select, &app.keybindings),
+                        key_display(&KeyAction::ToggleStar, &app.keybindings),
+                        key_display(&KeyAction::ToggleRead, &app.keybindings),
+                        key_display(&KeyAction::MarkAllRead, &app.keybindings),
+                        key_display(&KeyAction::OpenInBrowser, &app.keybindings),
+                        key_display(&KeyAction::OpenSearch, &app.keybindings),
+                        key_display(&KeyAction::ToggleTheme, &app.keybindings),
+                        key_display(&KeyAction::Back, &app.keybindings),
+                        key_display(&KeyAction::ForceQuit, &app.keybindings),
+                    )
                 }
                 View::FeedItemDetail => {
-                    "h/esc/q: back | home: dashboard | \u{2191}/\u{2193}: scroll | PgUp/PgDn: fast | s: Star | Space: Toggle read | o: open | t: theme | Ctrl+Q: quit".to_string()
+                    format!(
+                        "{}/{}: Scroll | {}/{}: Fast scroll | {}: Open | {}: Star | {}: Toggle read | {}: Links | {}: Search | {}: Theme | {}: Back | {}: Quit",
+                        key_display(&KeyAction::MoveUp, &app.keybindings),
+                        key_display(&KeyAction::MoveDown, &app.keybindings),
+                        key_display(&KeyAction::PageUp, &app.keybindings),
+                        key_display(&KeyAction::PageDown, &app.keybindings),
+                        key_display(&KeyAction::OpenInBrowser, &app.keybindings),
+                        key_display(&KeyAction::ToggleStar, &app.keybindings),
+                        key_display(&KeyAction::ToggleRead, &app.keybindings),
+                        key_display(&KeyAction::ExtractLinks, &app.keybindings),
+                        key_display(&KeyAction::OpenSearch, &app.keybindings),
+                        key_display(&KeyAction::ToggleTheme, &app.keybindings),
+                        key_display(&KeyAction::Back, &app.keybindings),
+                        key_display(&KeyAction::ForceQuit, &app.keybindings),
+                    )
                 }
                 View::Starred => {
-                    "\u{2191}/\u{2193}: Navigate | ENTER: View | s: Unstar | Space: Toggle read | o: Open | Tab: Switch view | q: Back | Ctrl+Q: Quit".to_string()
+                    format!(
+                        "{}/{}: Navigate | {}: View | {}: Unstar | {}: Toggle read | {}: Mark all read | {}: Open | {}: Search | {}: Back | {}: Quit",
+                        key_display(&KeyAction::MoveUp, &app.keybindings),
+                        key_display(&KeyAction::MoveDown, &app.keybindings),
+                        key_display(&KeyAction::Select, &app.keybindings),
+                        key_display(&KeyAction::ToggleStar, &app.keybindings),
+                        key_display(&KeyAction::ToggleRead, &app.keybindings),
+                        key_display(&KeyAction::MarkAllRead, &app.keybindings),
+                        key_display(&KeyAction::OpenInBrowser, &app.keybindings),
+                        key_display(&KeyAction::OpenSearch, &app.keybindings),
+                        key_display(&KeyAction::Quit, &app.keybindings),
+                        key_display(&KeyAction::ForceQuit, &app.keybindings),
+                    )
                 }
-                View::Summary => "Press any key to continue to Dashboard | q: Back | Ctrl+Q: Quit".to_string()
+                View::Summary => {
+                    format!(
+                        "Press any key to continue to Dashboard | {}: Back | {}: Quit",
+                        key_display(&KeyAction::Quit, &app.keybindings),
+                        key_display(&KeyAction::ForceQuit, &app.keybindings),
+                    )
+                }
             };
             (help_text, Style::default().fg(colors.text))
         }
@@ -634,14 +684,51 @@ fn render_compact_help_bar<B: Backend>(
         return;
     }
 
+    let kd = |action: &KeyAction| key_display(action, &app.keybindings);
     let help_text = match app.view {
-        View::Dashboard => "q:quit a:add r:refresh /:search f:filter p:preview ?:help",
-        View::FeedList => "q:back a:add enter:open space:expand d:del c:category m:read",
-        View::FeedItems => "q:back enter:view o:open s:star /:search",
-        View::FeedItemDetail => "q:back j/k:scroll o:open s:star space:read",
-        View::CategoryManagement => "q:back n:new e:edit d:del",
-        View::Starred => "q:back enter:view s:unstar o:open",
-        View::Summary => "any key:continue",
+        View::Dashboard => format!(
+            "{}:quit {}:add {}:refresh {}:search {}:filter {}:preview {}:help",
+            kd(&KeyAction::Quit),
+            kd(&KeyAction::AddFeed),
+            kd(&KeyAction::Refresh),
+            kd(&KeyAction::OpenSearch),
+            kd(&KeyAction::OpenFilter),
+            kd(&KeyAction::TogglePreview),
+            kd(&KeyAction::Help),
+        ),
+        View::FeedList => format!(
+            "{}:back {}:add {}:open {}:expand d:del c:category {}:read",
+            kd(&KeyAction::Quit),
+            kd(&KeyAction::AddFeed),
+            kd(&KeyAction::Select),
+            kd(&KeyAction::ToggleExpand),
+            kd(&KeyAction::MarkAllRead),
+        ),
+        View::FeedItems => format!(
+            "{}:back {}:view {}:open {}:star {}:search",
+            kd(&KeyAction::Quit),
+            kd(&KeyAction::Select),
+            kd(&KeyAction::OpenInBrowser),
+            kd(&KeyAction::ToggleStar),
+            kd(&KeyAction::OpenSearch),
+        ),
+        View::FeedItemDetail => format!(
+            "{}:back {}:scroll {}:open {}:star {}:read",
+            kd(&KeyAction::Quit),
+            kd(&KeyAction::MoveDown),
+            kd(&KeyAction::OpenInBrowser),
+            kd(&KeyAction::ToggleStar),
+            kd(&KeyAction::ToggleRead),
+        ),
+        View::CategoryManagement => format!("{}:back n:new e:edit d:del", kd(&KeyAction::Quit),),
+        View::Starred => format!(
+            "{}:back {}:view {}:unstar {}:open",
+            kd(&KeyAction::Quit),
+            kd(&KeyAction::Select),
+            kd(&KeyAction::ToggleStar),
+            kd(&KeyAction::OpenInBrowser),
+        ),
+        View::Summary => "any key:continue".to_string(),
     };
 
     let spans: Vec<Span> = help_text
