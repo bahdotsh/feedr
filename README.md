@@ -12,16 +12,22 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 
 - **Dashboard View**: See the latest articles across all your feeds, sorted chronologically
 - **Feed Management**: Subscribe to and organize multiple RSS/Atom feeds
+- **Feed Auto-Discovery**: Paste any webpage URL and Feedr will detect and offer to subscribe to its RSS/Atom feeds
 - **Starred Articles**: Save articles for later with a dedicated starred view
 - **Categories**: Organize feeds into custom categories with create, rename, and delete support
+- **Tree View**: Browse feeds in a hierarchical tree grouped by category
 - **Advanced Filtering**: Filter articles by category, age, author, read status, starred status, and content length
 - **Dual Themes**: Switch between a dark cyberpunk theme and a light zen theme with `t`
 - **Live Search**: Instantly search across all feed titles and article content
 - **Summary View**: "What's New" screen shows articles added since your last session with per-feed stats
 - **Read/Unread Tracking**: Persistent read state tracking across sessions
-- **Article Preview**: Toggle an inline preview pane in the feed items view
+- **Mark All Read**: Quickly mark all visible items as read with `m`
+- **Article Preview**: Toggle an inline preview pane in the dashboard view
+- **Link Extraction**: Extract and browse all links from an article with `l`
+- **Help Overlay**: Press `?` for a scrollable keybinding reference overlay
 - **OPML Import**: Bulk import feeds from OPML files via `feedr --import <file.opml>`
 - **Browser Integration**: Open articles in your default browser
+- **Mouse Support**: Click to select items and scroll with the mouse wheel
 - **Background Refresh**: Automatic feed updates with configurable intervals and smart rate limiting
 - **Rate Limiting**: Per-domain request throttling prevents "too many requests" errors (ideal for Reddit feeds)
 - **Vim-Style Navigation**: Use `j`/`k` alongside arrow keys for navigation
@@ -29,6 +35,7 @@ Feedr is a feature-rich terminal-based RSS feed reader written in Rust. It provi
 - **Authenticated Feeds**: Support for custom HTTP headers per feed (e.g., `Authorization: Bearer ...`) for private/authenticated RSS feeds
 - **Compact Mode**: Automatic compact layout for small terminals (≤30 rows), with manual `always`/`never` override in config
 - **CLI Config Management**: Get, set, and list configuration from the command line (`feedr config`), or use the interactive TUI config editor (`feedr config --tui`)
+- **Configurable Keybindings**: Remap any key action via the `[keybindings]` section in `config.toml`
 - **Configurable**: Customize timeouts, themes, UI behavior, and default feeds via TOML config
 - **XDG Compliant**: Follows standard directory specifications for configuration and data storage
 
@@ -97,28 +104,37 @@ Available config keys use dot-notation (e.g. `general.max_dashboard_items`, `net
 
 ### Keyboard Controls
 
+All keybindings below show their defaults. You can remap any action via the `[keybindings]` section in your config file — see [Configurable Keybindings](#configurable-keybindings).
+
 #### General Navigation
 | Key | Action |
 |-----|--------|
 | `Tab` | Cycle forward through views |
 | `Shift+Tab` | Cycle backward through views |
 | `q` | Go back (quit from Dashboard) |
+| `h` / `Esc` / `Backspace` | Go back one view |
+| `Home` | Return to Dashboard |
 | `Ctrl+Q` | Quit from any view |
 | `r` | Refresh all feeds |
 | `t` | Toggle dark/light theme |
 | `/` | Search mode |
+| `?` | Help overlay (scrollable keybinding reference) |
 
 #### Dashboard View
 | Key | Action |
 |-----|--------|
 | `↑/↓` or `k/j` | Navigate items |
+| `g` / `G` or `End` | Jump to top / bottom |
 | `Enter` | View selected item |
 | `f` | Filter articles |
-| `c` / `Ctrl+C` | Category management |
+| `c` | Cycle category filter |
+| `Ctrl+C` | Open category management |
 | `a` | Add a new feed |
 | `s` | Toggle starred |
 | `Space` | Toggle read/unread |
+| `m` | Mark all items as read |
 | `p` | Toggle preview pane |
+| `Shift+J` / `Shift+K` | Scroll preview down / up |
 | `o` | Open link in browser |
 | `1/2/3` | Quick-add demo feeds (HN, TechCrunch, BBC) |
 
@@ -128,8 +144,10 @@ Available config keys use dot-notation (e.g. `general.max_dashboard_items`, `net
 | `q` / `h` / `Esc` | Go to dashboard |
 | `↑/↓` or `k/j` | Navigate feeds |
 | `Enter` | View feed items |
+| `Space` | Expand/collapse category (tree view) |
 | `a` | Add a new feed |
 | `d` | Delete selected feed |
+| `c` | Assign category to feed |
 
 #### Feed Items View
 | Key | Action |
@@ -137,20 +155,32 @@ Available config keys use dot-notation (e.g. `general.max_dashboard_items`, `net
 | `q` / `h` / `Esc` / `Backspace` | Back to feeds list |
 | `Home` | Go to dashboard |
 | `↑/↓` or `k/j` | Navigate items |
+| `g` / `G` or `End` | Jump to top / bottom |
 | `Enter` | View item details |
 | `s` | Toggle starred |
 | `Space` | Toggle read/unread |
+| `m` | Mark all items as read |
 | `o` | Open item in browser |
 
 #### Item Detail View
 | Key | Action |
 |-----|--------|
 | `q` / `h` / `Esc` / `Backspace` | Back to feed items |
-| `↑/↓` or `u/d` | Scroll content |
+| `↑/↓` or `k/j` | Scroll content |
+| `Ctrl+U` / `Ctrl+D` | Scroll content (page) |
 | `Page Up` / `Page Down` | Scroll content (page) |
 | `g` | Jump to top |
 | `G` / `End` | Jump to bottom |
-| `s` / `Space` | Toggle starred |
+| `s` | Toggle starred |
+| `o` | Open item in browser |
+| `l` | Extract and show all links |
+
+#### Starred View
+| Key | Action |
+|-----|--------|
+| `↑/↓` or `k/j` | Navigate items |
+| `Enter` | View item details |
+| `s` | Remove from starred |
 | `o` | Open item in browser |
 
 #### Categories View
@@ -160,7 +190,10 @@ Available config keys use dot-notation (e.g. `general.max_dashboard_items`, `net
 | `e` | Rename category |
 | `d` | Delete category |
 | `Space` | Expand/collapse category |
-| `h` / `Esc` | Back |
+| `Enter` | Select category |
+| `r` | Refresh |
+| `?` | Help |
+| `h` / `Esc` / `q` | Back |
 
 #### Filter Mode (press `f` on Dashboard)
 | Key | Action |
@@ -172,6 +205,12 @@ Available config keys use dot-notation (e.g. `general.max_dashboard_items`, `net
 | `s` | Filter by starred status |
 | `l` | Filter by content length |
 | `x` | Clear all filters |
+
+#### Mouse Support
+| Action | Effect |
+|--------|--------|
+| Left click | Select item |
+| Scroll up/down | Navigate items |
 
 ## Configuration
 
@@ -274,6 +313,57 @@ Cookie = "session=abc123"
 ```
 Headers are sent with every request for that feed, including refreshes.
 
+### Configurable Keybindings
+
+Remap any action by adding a `[keybindings]` section to your config file. Each action can be bound to a single key string or an array of keys:
+
+```toml
+[keybindings]
+quit = "x"                          # Single key
+move_up = ["Up", "k", "w"]         # Multiple keys
+force_quit = "Ctrl+x"              # Modifier keys
+toggle_theme = "F5"                # Function keys
+```
+
+**Available actions:**
+
+| Action | Default | Description |
+|--------|---------|-------------|
+| `quit` | `q` | Go back / quit from Dashboard |
+| `force_quit` | `Ctrl+q` | Quit from any view |
+| `back` | `h`, `Esc`, `Backspace` | Go back one view |
+| `home` | `Home` | Return to Dashboard |
+| `toggle_theme` | `t` | Switch dark/light theme |
+| `refresh` | `r` | Refresh all feeds |
+| `help` | `?` | Show help overlay |
+| `open_search` | `/` | Enter search mode |
+| `move_up` | `Up`, `k` | Navigate up |
+| `move_down` | `Down`, `j` | Navigate down |
+| `page_up` | `PageUp`, `Ctrl+u` | Page up |
+| `page_down` | `PageDown`, `Ctrl+d` | Page down |
+| `jump_top` | `g` | Jump to top |
+| `jump_bottom` | `G`, `End` | Jump to bottom |
+| `select` | `Enter` | Select / open |
+| `add_feed` | `a` | Add new feed |
+| `delete_feed` | `d` | Delete selected feed |
+| `toggle_read` | `Space` | Toggle read/unread |
+| `toggle_star` | `s` | Toggle starred |
+| `mark_all_read` | `m` | Mark all items as read |
+| `open_in_browser` | `o` | Open in browser |
+| `toggle_preview` | `p` | Toggle preview pane |
+| `open_filter` | `f` | Open filter mode |
+| `cycle_category` | `c` | Cycle category filter |
+| `open_category_management` | `Ctrl+c` | Category management |
+| `assign_category` | `c` | Assign category to feed |
+| `extract_links` | `l` | Extract links from article |
+| `scroll_preview_up` | `Shift+K`, `Shift+Up` | Scroll preview up |
+| `scroll_preview_down` | `Shift+J`, `Shift+Down` | Scroll preview down |
+| `toggle_expand` | `Space` | Expand/collapse in tree view |
+| `next_tab` | `Tab` | Next view |
+| `prev_tab` | `Shift+Tab` | Previous view |
+
+**Supported key formats:** Single characters (`q`, `?`, `/`), special keys (`Enter`, `Space`, `Tab`, `Esc`, `Backspace`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, `Delete`, `F1`–`F5`), and modifier combos (`Ctrl+q`, `Shift+Tab`, `Alt+x`).
+
 ### Data Storage
 
 Feedr stores your bookmarks, categories, read/unread state, and starred articles in:
@@ -296,6 +386,8 @@ Feedr automatically migrates data from older versions to the new XDG-compliant l
 - **[clap](https://github.com/clap-rs/clap)**: Command-line argument parsing
 - **[opml](https://github.com/Holllo/opml)**: OPML import support
 - **[toml](https://github.com/toml-rs/toml)**: Configuration file parsing
+- **[scraper](https://github.com/causal-agent/scraper)**: HTML parsing for feed auto-discovery
+- **[url](https://github.com/servo/rust-url)**: URL parsing and manipulation
 
 ## License
 
