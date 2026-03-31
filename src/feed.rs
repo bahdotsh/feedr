@@ -509,4 +509,43 @@ mod tests {
         assert_eq!(feeds.len(), 1);
         assert_eq!(feeds[0].url, "https://example.com/feed.xml");
     }
+
+    #[test]
+    fn test_into_feed_with_feed_variant() {
+        let feed = Feed {
+            url: "https://example.com/feed.xml".to_string(),
+            title: "Test Feed".to_string(),
+            items: vec![],
+            title_lower: "test feed".to_string(),
+        };
+        let result = FeedFetchResult::Feed(feed);
+        let feed = result.into_feed().unwrap();
+        assert_eq!(feed.url, "https://example.com/feed.xml");
+        assert_eq!(feed.title, "Test Feed");
+    }
+
+    #[test]
+    fn test_into_feed_with_discovered_feeds_returns_error() {
+        let result = FeedFetchResult::DiscoveredFeeds {
+            feeds: vec![DiscoveredFeed {
+                url: "https://example.com/rss".to_string(),
+                title: "RSS Feed".to_string(),
+                feed_type: FeedType::Rss,
+            }],
+            page_url: "https://example.com/".to_string(),
+        };
+        let err = result.into_feed().unwrap_err();
+        assert!(err.to_string().contains("HTML page"));
+        assert!(err.to_string().contains("1 feed link(s)"));
+    }
+
+    #[test]
+    fn test_into_feed_with_empty_discovered_feeds_returns_error() {
+        let result = FeedFetchResult::DiscoveredFeeds {
+            feeds: vec![],
+            page_url: "https://example.com/".to_string(),
+        };
+        let err = result.into_feed().unwrap_err();
+        assert!(err.to_string().contains("No RSS/Atom feed links found"));
+    }
 }

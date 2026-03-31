@@ -288,27 +288,50 @@ fn handle_events(app: &mut App) -> Result<bool> {
                     KeyCode::Char('1') => {
                         if app.feeds.is_empty() {
                             // Add Hacker News RSS
-                            if let Err(e) = app.add_feed("https://news.ycombinator.com/rss") {
-                                app.error = Some(format!("Failed to add feed: {}", e));
+                            match app.add_feed("https://news.ycombinator.com/rss") {
+                                Ok(AddFeedResult::Added) => {}
+                                Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
+                                    app.error = Some(
+                                        "URL returned an HTML page instead of a feed".to_string(),
+                                    );
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                }
                             }
                         }
                     }
                     KeyCode::Char('2') => {
                         if app.feeds.is_empty() {
                             // Add TechCrunch RSS
-                            if let Err(e) = app.add_feed("https://feeds.feedburner.com/TechCrunch")
-                            {
-                                app.error = Some(format!("Failed to add feed: {}", e));
+                            match app.add_feed("https://feeds.feedburner.com/TechCrunch") {
+                                Ok(AddFeedResult::Added) => {}
+                                Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
+                                    app.error = Some(
+                                        "URL returned an HTML page instead of a feed".to_string(),
+                                    );
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                }
                             }
                         }
                     }
                     KeyCode::Char('3') => {
                         if app.feeds.is_empty() {
                             // Add NYTimes RSS
-                            if let Err(e) = app.add_feed(
+                            match app.add_feed(
                                 "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
                             ) {
-                                app.error = Some(format!("Failed to add feed: {}", e));
+                                Ok(AddFeedResult::Added) => {}
+                                Ok(AddFeedResult::DiscoveredFeeds { .. }) => {
+                                    app.error = Some(
+                                        "URL returned an HTML page instead of a feed".to_string(),
+                                    );
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Failed to add feed: {}", e));
+                                }
                             }
                         }
                     }
