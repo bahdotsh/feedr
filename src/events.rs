@@ -30,6 +30,13 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
     }
 
     if let Event::Key(key) = event {
+        return handle_key_event(app, key);
+    }
+    Ok(false)
+}
+
+pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -> Result<bool> {
+    {
         if matches!(key.kind, KeyEventKind::Release) {
             return Ok(false);
         }
@@ -265,7 +272,7 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
                     _ if app.key_matches(KeyAction::MoveDown, &key) => {
                         if let Some(selected) = app.selected_item {
                             let len = app.active_dashboard_items().len();
-                            if len > 0 && selected < len - 1 {
+                            if selected < len.saturating_sub(1) {
                                 app.selected_item = Some(selected + 1);
                                 app.reset_preview_scroll();
                             }
@@ -876,12 +883,14 @@ pub(crate) fn handle_events(app: &mut App) -> Result<bool> {
                         if let Some(selected) = app.selected_item {
                             if selected < starred.len() {
                                 let (feed_idx, item_idx) = starred[selected];
+                                let prev_feed = app.selected_feed;
                                 app.selected_feed = Some(feed_idx);
                                 app.selected_item = Some(item_idx);
                                 if let Err(e) = app.open_current_item_in_browser() {
                                     app.error = Some(format!("Failed to open link: {}", e));
                                 }
                                 // Restore selection for starred view
+                                app.selected_feed = prev_feed;
                                 app.selected_item = Some(selected);
                             }
                         }
@@ -1392,4 +1401,432 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Result<bool> {
         _ => {}
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{ExtractedLink, LinkType};
+    use crate::feed::{Feed, FeedItem};
+    use chrono::Utc;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn make_key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn make_test_app() -> App {
+        let mut app = App::new();
+        app.feeds = vec![
+            Feed {
+                url: "https://example.com/feed1".to_string(),
+                title: "Feed One".to_string(),
+                title_lower: "feed one".to_string(),
+                items: vec![
+                    FeedItem {
+                        title: "Old Article".to_string(),
+                        title_lower: "old article".to_string(),
+                        link: Some("https://example.com/old".to_string()),
+                        description: Some("Old content".to_string()),
+                        pub_date: None,
+                        author: Some("Author A".to_string()),
+                        formatted_date: None,
+                        parsed_date: Some(Utc::now() - chrono::Duration::days(30)),
+                        plain_text: Some("Old content".to_string()),
+                    },
+                    FeedItem {
+                        title: "New Article".to_string(),
+                        title_lower: "new article".to_string(),
+                        link: Some("https://example.com/new".to_string()),
+                        description: Some("New content".to_string()),
+                        pub_date: None,
+                        author: None,
+                        formatted_date: None,
+                        parsed_date: Some(Utc::now() - chrono::Duration::hours(1)),
+                        plain_text: Some("New content".to_string()),
+                    },
+                ],
+            },
+            Feed {
+                url: "https://example.com/feed2".to_string(),
+                title: "Feed Two".to_string(),
+                title_lower: "feed two".to_string(),
+                items: vec![FeedItem {
+                    title: "Another New".to_string(),
+                    title_lower: "another new".to_string(),
+                    link: Some("https://example.com/another".to_string()),
+                    description: Some("Another new content".to_string()),
+                    pub_date: None,
+                    author: Some("Author B".to_string()),
+                    formatted_date: None,
+                    parsed_date: Some(Utc::now() - chrono::Duration::hours(2)),
+                    plain_text: Some("Another new content".to_string()),
+                }],
+            },
+        ];
+        app.update_dashboard();
+        app.rebuild_feed_tree();
+        app
+    }
+
+    #[test]
+    fn test_force_quit_from_any_view() {
+        let views = vec![
+            View::Dashboard,
+            View::FeedList,
+            View::FeedItems,
+            View::FeedItemDetail,
+            View::Starred,
+            View::CategoryManagement,
+            View::Summary,
+        ];
+        for view in views {
+            let mut app = make_test_app();
+            app.view = view.clone();
+            let key = make_key(KeyCode::Char('q'), KeyModifiers::CONTROL);
+            let result = handle_key_event(&mut app, key).unwrap();
+            assert!(result, "Force quit should return true from {:?}", view);
+        }
+    }
+
+    #[test]
+    fn test_help_overlay_consumes_keys() {
+        let mut app = make_test_app();
+        app.show_help_overlay = true;
+        app.view = View::Dashboard;
+
+        // Random key should dismiss the overlay
+        let key = make_key(KeyCode::Char('x'), KeyModifiers::NONE);
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(!result);
+        assert!(!app.show_help_overlay);
+    }
+
+    #[test]
+    fn test_help_overlay_scroll() {
+        let mut app = make_test_app();
+        app.show_help_overlay = true;
+        app.help_overlay_scroll = 0;
+
+        // Scroll down
+        let key = make_key(KeyCode::Char('j'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, key).unwrap();
+        assert!(
+            app.show_help_overlay,
+            "Scrolling should not dismiss overlay"
+        );
+        assert_eq!(app.help_overlay_scroll, 1);
+
+        // Scroll up
+        let key = make_key(KeyCode::Char('k'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, key).unwrap();
+        assert_eq!(app.help_overlay_scroll, 0);
+
+        // Scroll up at 0 should not underflow
+        let _ = handle_key_event(&mut app, key).unwrap();
+        assert_eq!(app.help_overlay_scroll, 0);
+    }
+
+    #[test]
+    fn test_help_overlay_esc_closes() {
+        let mut app = make_test_app();
+        app.show_help_overlay = true;
+
+        let key = make_key(KeyCode::Esc, KeyModifiers::NONE);
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(!result);
+        assert!(!app.show_help_overlay);
+    }
+
+    #[test]
+    fn test_help_overlay_does_not_quit() {
+        let mut app = make_test_app();
+        app.show_help_overlay = true;
+
+        // 'q' is bound to Quit AND Help overlay close — should close overlay, not quit
+        let key = make_key(KeyCode::Char('q'), KeyModifiers::NONE);
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(!result, "Should not quit when help overlay is open");
+        assert!(!app.show_help_overlay);
+    }
+
+    #[test]
+    fn test_link_overlay_navigation() {
+        let mut app = make_test_app();
+        app.show_link_overlay = true;
+        app.extracted_links = vec![
+            ExtractedLink {
+                url: "https://example.com/1".to_string(),
+                text: "Link 1".to_string(),
+                link_type: LinkType::Link,
+            },
+            ExtractedLink {
+                url: "https://example.com/2".to_string(),
+                text: "Link 2".to_string(),
+                link_type: LinkType::Link,
+            },
+            ExtractedLink {
+                url: "https://example.com/3".to_string(),
+                text: "Link 3".to_string(),
+                link_type: LinkType::Link,
+            },
+        ];
+        app.selected_link = 0;
+
+        // Move down
+        let down = make_key(KeyCode::Char('j'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, down).unwrap();
+        assert_eq!(app.selected_link, 1);
+        assert!(app.show_link_overlay);
+
+        // Move down again
+        let _ = handle_key_event(&mut app, down).unwrap();
+        assert_eq!(app.selected_link, 2);
+
+        // Move down at end — should not go past last
+        let _ = handle_key_event(&mut app, down).unwrap();
+        assert_eq!(app.selected_link, 2);
+
+        // Move up
+        let up = make_key(KeyCode::Char('k'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, up).unwrap();
+        assert_eq!(app.selected_link, 1);
+    }
+
+    #[test]
+    fn test_link_overlay_esc_closes() {
+        let mut app = make_test_app();
+        app.show_link_overlay = true;
+        app.extracted_links = vec![ExtractedLink {
+            url: "https://example.com".to_string(),
+            text: "Link".to_string(),
+            link_type: LinkType::Link,
+        }];
+
+        let key = make_key(KeyCode::Esc, KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, key).unwrap();
+        assert!(!app.show_link_overlay);
+    }
+
+    #[test]
+    fn test_link_overlay_does_not_quit() {
+        let mut app = make_test_app();
+        app.show_link_overlay = true;
+        app.extracted_links = vec![ExtractedLink {
+            url: "https://example.com".to_string(),
+            text: "Link".to_string(),
+            link_type: LinkType::Link,
+        }];
+
+        let key = make_key(KeyCode::Char('q'), KeyModifiers::NONE);
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(!result, "Should not quit when link overlay is open");
+        assert!(!app.show_link_overlay);
+    }
+
+    #[test]
+    fn test_error_dismissal_consumes_key() {
+        let mut app = make_test_app();
+        app.error = Some("Test error".to_string());
+        app.view = View::Dashboard;
+
+        // Any key should dismiss error without further action
+        let key = make_key(KeyCode::Char('q'), KeyModifiers::NONE);
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(!result, "Error dismissal should not quit");
+        assert!(app.error.is_none());
+        // Verify the key was consumed (we're still on Dashboard, not quitting)
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn test_key_release_ignored() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+
+        let key = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(!result, "Key release should be ignored");
+    }
+
+    #[test]
+    fn test_tab_cycles_views_forward() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+
+        let tab = make_key(KeyCode::Tab, KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, tab).unwrap();
+        assert_eq!(app.view, View::FeedList);
+
+        let _ = handle_key_event(&mut app, tab).unwrap();
+        assert_eq!(app.view, View::Starred);
+
+        let _ = handle_key_event(&mut app, tab).unwrap();
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn test_shift_tab_cycles_views_backward() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+
+        let shift_tab = make_key(KeyCode::Tab, KeyModifiers::SHIFT);
+        let _ = handle_key_event(&mut app, shift_tab).unwrap();
+        assert_eq!(app.view, View::Starred);
+
+        let _ = handle_key_event(&mut app, shift_tab).unwrap();
+        assert_eq!(app.view, View::FeedList);
+
+        let _ = handle_key_event(&mut app, shift_tab).unwrap();
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn test_dashboard_navigation() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+        app.selected_item = None;
+
+        // First MoveDown initializes selection to 0
+        let down = make_key(KeyCode::Char('j'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, down).unwrap();
+        assert_eq!(app.selected_item, Some(0));
+
+        // Move down
+        let _ = handle_key_event(&mut app, down).unwrap();
+        assert_eq!(app.selected_item, Some(1));
+
+        // Move up
+        let up = make_key(KeyCode::Char('k'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, up).unwrap();
+        assert_eq!(app.selected_item, Some(0));
+
+        // Move up at 0 stays at 0
+        let _ = handle_key_event(&mut app, up).unwrap();
+        assert_eq!(app.selected_item, Some(0));
+    }
+
+    #[test]
+    fn test_dashboard_quit() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+
+        let key = make_key(KeyCode::Char('q'), KeyModifiers::NONE);
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(result, "'q' on Dashboard should quit");
+    }
+
+    #[test]
+    fn test_feedlist_quit_goes_to_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::FeedList;
+
+        let key = make_key(KeyCode::Char('q'), KeyModifiers::NONE);
+        let result = handle_key_event(&mut app, key).unwrap();
+        assert!(!result, "'q' on FeedList should not quit");
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn test_help_opens_from_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+
+        let key = make_key(KeyCode::Char('?'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, key).unwrap();
+        assert!(app.show_help_overlay);
+        assert_eq!(app.help_overlay_scroll, 0);
+    }
+
+    #[test]
+    fn test_mark_all_read_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+        app.read_items.clear();
+
+        let key = make_key(KeyCode::Char('m'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, key).unwrap();
+
+        assert!(app.is_item_read(0, 0));
+        assert!(app.is_item_read(0, 1));
+        assert!(app.is_item_read(1, 0));
+        assert!(app.success_message.is_some());
+    }
+
+    #[test]
+    fn test_feedlist_tree_navigation() {
+        let mut app = make_test_app();
+        app.view = View::FeedList;
+        app.selected_tree_item = None;
+
+        // First MoveDown initializes to 0
+        let down = make_key(KeyCode::Char('j'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, down).unwrap();
+        assert_eq!(app.selected_tree_item, Some(0));
+
+        // Move down
+        let _ = handle_key_event(&mut app, down).unwrap();
+        assert_eq!(app.selected_tree_item, Some(1));
+
+        // Move up
+        let up = make_key(KeyCode::Char('k'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, up).unwrap();
+        assert_eq!(app.selected_tree_item, Some(0));
+    }
+
+    #[test]
+    fn test_mouse_scroll_down_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+        app.selected_item = Some(0);
+
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        let _ = handle_mouse_event(&mut app, mouse).unwrap();
+        assert_eq!(app.selected_item, Some(1));
+    }
+
+    #[test]
+    fn test_mouse_click_dismisses_help() {
+        let mut app = make_test_app();
+        app.show_help_overlay = true;
+
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        let _ = handle_mouse_event(&mut app, mouse).unwrap();
+        assert!(!app.show_help_overlay);
+    }
+
+    #[test]
+    fn test_mouse_click_dismisses_link_overlay() {
+        let mut app = make_test_app();
+        app.show_link_overlay = true;
+
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        let _ = handle_mouse_event(&mut app, mouse).unwrap();
+        assert!(!app.show_link_overlay);
+    }
 }
