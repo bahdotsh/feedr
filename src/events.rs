@@ -854,8 +854,14 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                     }
                 }
                 _ if app.key_matches(KeyAction::Home, &key) => {
+                    let feed_idx = app.selected_feed;
+                    let item_idx = app.selected_item;
                     app.exit_detail_view(View::Dashboard);
-                    app.selected_item = None;
+                    app.selected_item = feed_idx.zip(item_idx).and_then(|(fi, ii)| {
+                        app.active_dashboard_items()
+                            .iter()
+                            .position(|&(dfi, dii)| dfi == fi && dii == ii)
+                    });
                 }
                 _ if app.key_matches(KeyAction::ToggleTheme, &key) => {
                     handle_toggle_theme(app);
