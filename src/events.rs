@@ -2576,8 +2576,8 @@ mod tests {
         app.selected_feed = Some(0);
         // Feed 0, item 1 ("New Article", 1 hour ago) → dashboard index 0
         app.selected_item = Some(1);
-        let h = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
-        let _ = handle_key_event(&mut app, h).unwrap();
+        let home = make_key(KeyCode::Home, KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, home).unwrap();
         assert_eq!(app.view, View::Dashboard);
         assert_eq!(app.selected_item, Some(0));
     }
@@ -2588,8 +2588,8 @@ mod tests {
         app.view = View::FeedItemDetail;
         app.selected_feed = Some(999);
         app.selected_item = Some(999);
-        let h = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
-        let _ = handle_key_event(&mut app, h).unwrap();
+        let home = make_key(KeyCode::Home, KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, home).unwrap();
         assert_eq!(app.view, View::Dashboard);
         assert_eq!(app.selected_item, None);
     }
