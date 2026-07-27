@@ -2510,11 +2510,96 @@ mod tests {
     }
 
     #[test]
+    fn test_jump_top_in_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+        app.selected_item = Some(2);
+        let g = make_key(KeyCode::Char('g'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, g).unwrap();
+        assert_eq!(app.selected_item, Some(0));
+    }
+
+    #[test]
+    fn test_jump_bottom_in_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::Dashboard;
+        app.selected_item = Some(0);
+        let shift_g = make_key(KeyCode::Char('G'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, shift_g).unwrap();
+        assert_eq!(app.selected_item, Some(2));
+    }
+
+    #[test]
+    fn test_jump_top_in_feed_items() {
+        let mut app = make_test_app();
+        app.view = View::FeedItems;
+        app.selected_feed = Some(0);
+        app.selected_item = Some(1);
+        let g = make_key(KeyCode::Char('g'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, g).unwrap();
+        assert_eq!(app.selected_item, Some(0));
+    }
+
+    #[test]
+    fn test_jump_bottom_in_feed_items() {
+        let mut app = make_test_app();
+        app.view = View::FeedItems;
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+        let shift_g = make_key(KeyCode::Char('G'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, shift_g).unwrap();
+        assert_eq!(app.selected_item, Some(1));
+    }
+
+    #[test]
+    fn test_home_from_feedlist_goes_to_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::FeedList;
+        let h = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, h).unwrap();
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn test_home_from_starred_goes_to_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::Starred;
+        let h = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, h).unwrap();
+        assert_eq!(app.view, View::Dashboard);
+    }
+
+    #[test]
+    fn test_home_from_detail_preserves_dashboard_selection() {
+        let mut app = make_test_app();
+        app.view = View::FeedItemDetail;
+        app.selected_feed = Some(0);
+        // Feed 0, item 1 ("New Article", 1 hour ago) → dashboard index 0
+        app.selected_item = Some(1);
+        let h = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, h).unwrap();
+        assert_eq!(app.view, View::Dashboard);
+        assert_eq!(app.selected_item, Some(0));
+    }
+
+    #[test]
+    fn test_home_from_detail_falls_back_when_not_in_dashboard() {
+        let mut app = make_test_app();
+        app.view = View::FeedItemDetail;
+        app.selected_feed = Some(999);
+        app.selected_item = Some(999);
+        let h = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, h).unwrap();
+        assert_eq!(app.view, View::Dashboard);
+        assert_eq!(app.selected_item, None);
+    }
+
+    #[test]
     fn test_back_from_detail_clears_article_search() {
         let mut app = make_detail_app();
         app.article_search_query = "foo".to_string();
 
-        // `h` is Back by default.
+        // `Esc` or `Backspace` is Back by default.
         let back = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
         let _ = handle_key_event(&mut app, back).unwrap();
         assert!(app.article_search_query.is_empty());

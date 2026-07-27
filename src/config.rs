@@ -629,6 +629,33 @@ mod tests {
     }
 
     #[test]
+    fn test_scroll_position_defaults_to_true() {
+        assert!(Config::default().ui.scroll_position);
+    }
+
+    #[test]
+    fn test_scroll_position_back_compat_without_key() {
+        let toml_str = "[ui]\nshow_preview = false\n";
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.ui.scroll_position);
+    }
+
+    #[test]
+    fn test_scroll_position_get_set() {
+        let mut config = Config::default();
+        assert_eq!(config.get_value("ui.scroll_position").unwrap(), "true");
+
+        config
+            .validate_and_set("ui.scroll_position", "false")
+            .unwrap();
+        assert!(!config.ui.scroll_position);
+        assert_eq!(config.get_value("ui.scroll_position").unwrap(), "false");
+
+        assert!(config.validate_and_set("ui.scroll_position", "yes").is_err());
+        assert!(!config.ui.scroll_position);
+    }
+
+    #[test]
     fn test_config_serialization() {
         let config = Config::default();
         let toml_str = toml::to_string(&config).unwrap();
