@@ -857,9 +857,6 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                     // Jump to the end (vim-style with Shift or End key)
                     app.detail_vertical_scroll = app.detail_max_scroll;
                 }
-                KeyCode::Char('l') => {
-                    app.extract_links_from_current_item();
-                }
                 // Configurable keybindings via match guards
                 _ if app.key_matches(KeyAction::Quit, &key) => {
                     if app.is_searching {
@@ -912,6 +909,9 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                 }
                 _ if app.key_matches(KeyAction::ToggleRead, &key) => {
                     handle_toggle_read_current(app);
+                }
+                _ if app.key_matches(KeyAction::ExtractLinks, &key) => {
+                    app.extract_links_from_current_item();
                 }
                 // Configurable page up/down — these fire when the user has
                 // remapped page_up/page_down (e.g. Space → page_down).
@@ -2404,34 +2404,30 @@ mod tests {
 
     #[test]
     fn test_page_down_custom_keybinding_in_detail() {
-        // Reproducer: binding Space to page_down and pressing it in the
+        // Reproducer: binding PageDown to page_down and pressing it in the
         // detail view must scroll down by a page.
         let mut app = make_detail_app();
-        // Override page_down to include Space (mimics the user's config)
+        // Override page_down to include PageDown (mimics the user's config)
         app.keybindings.insert(
             KeyAction::PageDown,
-            vec![
-                KeyBinding::new(KeyCode::Char(' ')),
-                KeyBinding::new(KeyCode::PageDown),
-                KeyBinding::with_ctrl(KeyCode::Char('d')),
-            ],
+            vec![KeyBinding::new(KeyCode::PageDown)],
         );
         // Give enough scroll room so the page jump is visible
         app.detail_max_scroll = 50;
         app.detail_vertical_scroll = 0;
 
-        let space = make_key(KeyCode::Char(' '), KeyModifiers::NONE);
-        let _ = handle_key_event(&mut app, space).unwrap();
+        let pgdn = make_key(KeyCode::PageDown, KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, pgdn).unwrap();
         assert_eq!(
             app.detail_vertical_scroll, 10,
-            "Space bound to page_down should scroll 10 lines"
+            "PageDown bound to page_down should scroll 10 lines"
         );
 
-        // Press Space again — should scroll further
-        let _ = handle_key_event(&mut app, space).unwrap();
+        // Press PageDown again — should scroll further
+        let _ = handle_key_event(&mut app, pgdn).unwrap();
         assert_eq!(
             app.detail_vertical_scroll, 20,
-            "Second Space press should scroll to 20"
+            "Second PageDown press should scroll to 20"
         );
 
         // Unbound key should not scroll
