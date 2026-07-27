@@ -467,6 +467,19 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         app.selected_item = Some(0);
                     }
                 }
+                _ if app.key_matches(KeyAction::JumpTop, &key) => {
+                    if !app.active_dashboard_items().is_empty() {
+                        app.selected_item = Some(0);
+                        app.reset_preview_scroll();
+                    }
+                }
+                _ if app.key_matches(KeyAction::JumpBottom, &key) => {
+                    let len = app.active_dashboard_items().len();
+                    if len > 0 {
+                        app.selected_item = Some(len - 1);
+                        app.reset_preview_scroll();
+                    }
+                }
                 _ if app.key_matches(KeyAction::Select, &key) => {
                     if let Some(selected) = app.selected_item {
                         let active = app.active_dashboard_items();
@@ -757,6 +770,20 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         }
                     }
                 }
+                _ if app.key_matches(KeyAction::JumpTop, &key) => {
+                    if let Some(feed) = app.current_feed() {
+                        if !feed.items.is_empty() {
+                            app.selected_item = Some(0);
+                        }
+                    }
+                }
+                _ if app.key_matches(KeyAction::JumpBottom, &key) => {
+                    if let Some(feed) = app.current_feed() {
+                        if !feed.items.is_empty() {
+                            app.selected_item = Some(feed.items.len() - 1);
+                        }
+                    }
+                }
                 _ if app.key_matches(KeyAction::Select, &key) => {
                     if app.selected_item.is_some() {
                         app.view = View::FeedItemDetail;
@@ -977,6 +1004,18 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                         app.selected_item = Some(new_sel);
                     } else if !starred.is_empty() {
                         app.selected_item = Some(0);
+                    }
+                }
+                _ if app.key_matches(KeyAction::JumpTop, &key) => {
+                    let starred = app.get_starred_dashboard_items();
+                    if !starred.is_empty() {
+                        app.selected_item = Some(0);
+                    }
+                }
+                _ if app.key_matches(KeyAction::JumpBottom, &key) => {
+                    let starred = app.get_starred_dashboard_items();
+                    if !starred.is_empty() {
+                        app.selected_item = Some(starred.len() - 1);
                     }
                 }
                 _ if app.key_matches(KeyAction::Select, &key) => {
