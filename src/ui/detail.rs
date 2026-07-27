@@ -428,7 +428,7 @@ pub(super) fn render_item_detail<B: Backend>(
 
         f.render_widget(content, chunks[content_chunk_idx]);
 
-        if app.detail_max_scroll > 0 && chunks[content_chunk_idx].height > 2 {
+        if app.config.ui.scroll_position && app.detail_max_scroll > 0 && chunks[content_chunk_idx].height > 2 {
             f.render_widget(
                 ScrollPosition {
                     scroll: app.detail_vertical_scroll,
