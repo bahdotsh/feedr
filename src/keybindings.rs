@@ -251,12 +251,17 @@ pub fn default_keybindings() -> KeyBindingMap {
     map.insert(
         KeyAction::Back,
         vec![
-            KeyBinding::new(KeyCode::Char('h')),
             KeyBinding::new(KeyCode::Esc),
             KeyBinding::new(KeyCode::Backspace),
         ],
     );
-    map.insert(KeyAction::Home, vec![KeyBinding::new(KeyCode::Home)]);
+    map.insert(
+        KeyAction::Home,
+        vec![
+            KeyBinding::new(KeyCode::Char('h')),
+            KeyBinding::new(KeyCode::Home),
+        ],
+    );
     map.insert(
         KeyAction::ToggleTheme,
         vec![KeyBinding::new(KeyCode::Char('t'))],

@@ -210,6 +210,7 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
             || app.key_matches(KeyAction::Help, &key)
             || app.key_matches(KeyAction::Quit, &key)
             || app.key_matches(KeyAction::Back, &key)
+            || app.key_matches(KeyAction::Home, &key)
         {
             app.show_help_overlay = false;
         } else if app.key_matches(KeyAction::MoveDown, &key) {
@@ -551,6 +552,10 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                     app.selected_item = None;
                 }
                 _ if app.key_matches(KeyAction::Back, &key) => {
+                    app.view = View::Dashboard;
+                    app.selected_item = None;
+                }
+                _ if app.key_matches(KeyAction::Home, &key) => {
                     app.view = View::Dashboard;
                     app.selected_item = None;
                 }
@@ -925,6 +930,10 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                     app.selected_item = None;
                 }
                 _ if app.key_matches(KeyAction::Back, &key) => {
+                    app.view = View::Dashboard;
+                    app.selected_item = None;
+                }
+                _ if app.key_matches(KeyAction::Home, &key) => {
                     app.view = View::Dashboard;
                     app.selected_item = None;
                 }
