@@ -605,6 +605,8 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
             lines.push(Line::from(""));
             add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
             add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
+            add_key(&kd(&KeyAction::JumpTop), "Jump to first article", &mut lines);
+            add_key(&kd(&KeyAction::JumpBottom), "Jump to last article", &mut lines);
             add_key(
                 &format!("Shift+{}", kd(&KeyAction::ScrollPreviewUp)),
                 "Scroll preview pane",
@@ -699,6 +701,8 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
             lines.push(Line::from(""));
             add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
             add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
+            add_key(&kd(&KeyAction::JumpTop), "Jump to first item", &mut lines);
+            add_key(&kd(&KeyAction::JumpBottom), "Jump to last item", &mut lines);
             add_key(&kd(&KeyAction::Select), "View article detail", &mut lines);
             add_key(
                 &kd(&KeyAction::OpenInBrowser),
@@ -769,6 +773,8 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
             lines.push(Line::from(""));
             add_key(&kd(&KeyAction::MoveUp), "Navigate up", &mut lines);
             add_key(&kd(&KeyAction::MoveDown), "Navigate down", &mut lines);
+            add_key(&kd(&KeyAction::JumpTop), "Jump to first article", &mut lines);
+            add_key(&kd(&KeyAction::JumpBottom), "Jump to last article", &mut lines);
             add_key(&kd(&KeyAction::Select), "View article detail", &mut lines);
             add_key(
                 &kd(&KeyAction::OpenInBrowser),

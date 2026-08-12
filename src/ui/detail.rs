@@ -5,9 +5,9 @@ use crate::ui::ColorScheme;
 use ratatui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Padding, Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -428,6 +428,17 @@ pub(super) fn render_item_detail<B: Backend>(
 
         f.render_widget(content, chunks[content_chunk_idx]);
 
+        if app.config.ui.scroll_position && app.detail_max_scroll > 0 && chunks[content_chunk_idx].height > 2 {
+            f.render_widget(
+                ScrollPosition {
+                    scroll: app.detail_vertical_scroll,
+                    max_scroll: app.detail_max_scroll,
+                    color: colors.primary,
+                },
+                chunks[content_chunk_idx],
+            );
+        }
+
         if let Some(idx) = footer_chunk_idx {
             render_search_footer(f, app, chunks[idx], colors);
         }
@@ -560,6 +571,37 @@ pub(super) fn build_styled_body<'a>(
         .collect()
 }
 
+struct ScrollPosition {
+    scroll: u16,
+    max_scroll: u16,
+    color: Color,
+}
+
+impl Widget for ScrollPosition {
+    fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if self.max_scroll == 0 || area.height <= 2 {
+            return;
+        }
+        let track_height = area.height - 2;
+        let total = (track_height as u32) + (self.max_scroll as u32);
+        let thumb_height = ((track_height as u32 * track_height as u32) / total)
+            .max(1)
+            .min(track_height.saturating_sub(1) as u32) as u16;
+        let thumb_max_pos = track_height - thumb_height;
+        let thumb_pos = ((self.scroll as u32 * thumb_max_pos as u32)
+            / (self.max_scroll as u32))
+            as u16;
+
+        let x = area.x + area.width - 1;
+        for y_offset in 0..track_height {
+            let cell = buf.get_mut(x, area.y + 1 + y_offset);
+            if y_offset >= thumb_pos && y_offset < thumb_pos + thumb_height {
+                cell.set_fg(self.color);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,5 +718,119 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].content.as_ref(), "head ");
         assert_eq!(spans[1].content.as_ref(), "foo");
+    }
+
+    // ── ScrollPosition widget tests ─────────────────────────────────────
+
+    /// Helper: render ScrollPosition into a freshly allocated buffer and
+    /// return the symbol at (x, y), or None if the cell is outside the area.
+    fn scroll_pos_area(
+        scroll: u16,
+        max_scroll: u16,
+        area: Rect,
+    ) -> ratatui::buffer::Buffer {
+        let mut buf = ratatui::buffer::Buffer::filled(area, &ratatui::buffer::Cell::default());
+        // Simulate the right border that Block renders
+        let right_col = area.x + area.width - 1;
+        for y in area.y..area.y + area.height {
+            buf.get_mut(right_col, y).set_symbol("│");
+        }
+        let widget = ScrollPosition {
+            scroll,
+            max_scroll,
+            color: Color::Rgb(0, 255, 0),
+        };
+        widget.render(area, &mut buf);
+        buf
+    }
+
+    fn cell_has_color(buf: &ratatui::buffer::Buffer, x: u16, y: u16, color: Color) -> bool {
+        buf.get(x, y).style().fg == Some(color)
+    }
+
+    #[test]
+    fn scroll_position_not_shown_when_content_fits() {
+        let area = Rect::new(0, 0, 20, 10);
+        let buf = scroll_pos_area(0, 0, area);
+        let right_col = area.x + area.width - 1;
+        let green = Color::Rgb(0, 255, 0);
+        for y in 0..area.height {
+            assert!(
+                !cell_has_color(&buf, right_col, y, green),
+                "no scroll position color when max_scroll=0 at y={y}"
+            );
+        }
+    }
+
+    #[test]
+    fn scroll_position_at_scroll_0_thumb_at_top() {
+        let area = Rect::new(0, 0, 20, 12);
+        let buf = scroll_pos_area(0, 10, area);
+        let right_col = area.x + area.width - 1;
+        let green = Color::Rgb(0, 255, 0);
+        // Thumb should start at inner top (area.y + 1)
+        assert!(
+            cell_has_color(&buf, right_col, area.y + 1, green),
+            "thumb must be colored at track top when scroll=0"
+        );
+        // Bottom border corner must not be colored
+        assert!(
+            !cell_has_color(&buf, right_col, area.y + area.height - 1, green),
+            "bottom border corner must not be colored"
+        );
+    }
+
+    #[test]
+    fn scroll_position_at_scroll_max_thumb_at_bottom() {
+        let area = Rect::new(0, 0, 20, 12);
+        let buf = scroll_pos_area(10, 10, area);
+        let right_col = area.x + area.width - 1;
+        let green = Color::Rgb(0, 255, 0);
+        // Thumb should end at inner bottom (area.y + area.height - 2)
+        let bottom_inner = area.y + area.height - 2;
+        assert!(
+            cell_has_color(&buf, right_col, bottom_inner, green),
+            "thumb must be colored at track bottom when scroll=max"
+        );
+    }
+
+    #[test]
+    fn scroll_position_minimum_height_one() {
+        // Very long article 1000 lines in a 40-row viewport
+        let area = Rect::new(0, 0, 20, 42);
+        let buf = scroll_pos_area(500, 960, area);
+        let right_col = area.x + area.width - 1;
+        let green = Color::Rgb(0, 255, 0);
+        let track_height = area.height - 2;
+        // Count thumb cells by foreground color
+        let mut count = 0u16;
+        for y_offset in 0..track_height {
+            if cell_has_color(&buf, right_col, area.y + 1 + y_offset, green) {
+                count += 1;
+            }
+        }
+        assert!(
+            count >= 1,
+            "thumb must be at least 1 cell tall, got {count}"
+        );
+        assert!(
+            count <= track_height - 1,
+            "thumb must not exceed track_height-1 ({})",
+            track_height - 1
+        );
+    }
+
+    #[test]
+    fn scroll_position_hidden_when_area_too_small() {
+        let area = Rect::new(0, 0, 20, 2);
+        let buf = scroll_pos_area(5, 10, area);
+        let right_col = area.x + area.width - 1;
+        let green = Color::Rgb(0, 255, 0);
+        for y in 0..area.height {
+            assert!(
+                !cell_has_color(&buf, right_col, y, green),
+                "no scroll position when area.height <= 2 at y={y}"
+            );
+        }
     }
 }

@@ -1118,6 +1118,50 @@ mod tests {
     }
 
     #[test]
+    fn test_build_keybindings_page_down_with_space() {
+        // Reproducer for the bug: binding Space to page_down is accepted
+        // by the parser but was never dispatched in any view.
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "page_down".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("Space".to_string()),
+                toml::Value::String("PageDown".to_string()),
+                toml::Value::String("Ctrl+d".to_string()),
+            ]),
+        );
+        let (map, warnings) = build_keybindings(&overrides);
+        assert!(warnings.is_empty(), "unexpected warnings: {:?}", warnings);
+
+        let bindings = map.get(&KeyAction::PageDown).unwrap();
+        assert_eq!(bindings.len(), 3);
+
+        // "Space" → KeyCode::Char(' '), no modifiers
+        assert_eq!(bindings[0].code, KeyCode::Char(' '));
+        assert_eq!(bindings[0].modifiers, KeyModifiers::NONE);
+
+        // "PageDown" → KeyCode::PageDown, no modifiers
+        assert_eq!(bindings[1].code, KeyCode::PageDown);
+        assert_eq!(bindings[1].modifiers, KeyModifiers::NONE);
+
+        // "Ctrl+d" → KeyCode::Char('d'), CONTROL
+        assert_eq!(bindings[2].code, KeyCode::Char('d'));
+        assert_eq!(bindings[2].modifiers, KeyModifiers::CONTROL);
+
+        // Verify the binding actually matches a Space keypress
+        let space_event = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(
+            bindings.iter().any(|b| b.matches(&space_event)),
+            "Space must match the PageDown binding"
+        );
+    }
+
+    #[test]
     fn test_keyaction_as_str_roundtrip_with_fromstr() {
         // Every KeyAction must round-trip through as_str() -> "-"→"_" -> from_str().
         // If you add a new KeyAction variant, add it to both maps.

@@ -103,6 +103,9 @@ pub struct UiConfig {
     /// Show the dashboard preview pane on launch
     #[serde(default)]
     pub show_preview: bool,
+    /// Show a scroll position indicator on the right border of the article detail view
+    #[serde(default = "default_scroll_position")]
+    pub scroll_position: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -163,6 +166,10 @@ fn default_error_timeout() -> u64 {
     3000
 }
 
+fn default_scroll_position() -> bool {
+    true
+}
+
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
@@ -191,6 +198,7 @@ impl Default for UiConfig {
             theme: Theme::default(),
             compact_mode: CompactMode::default(),
             show_preview: false,
+            scroll_position: true,
         }
     }
 }
@@ -231,6 +239,7 @@ impl Config {
             "ui.theme" => Ok(self.ui.theme.to_string()),
             "ui.compact_mode" => Ok(self.ui.compact_mode.to_string()),
             "ui.show_preview" => Ok(self.ui.show_preview.to_string()),
+            "ui.scroll_position" => Ok(self.ui.scroll_position.to_string()),
             k if k.starts_with("default_feeds") => {
                 bail!("Feed management is not supported via CLI. Use 'feedr config --tui' instead.")
             }
@@ -310,6 +319,10 @@ impl Config {
             "ui.show_preview" => {
                 let v: bool = value.parse().context("Expected 'true' or 'false'")?;
                 self.ui.show_preview = v;
+            }
+            "ui.scroll_position" => {
+                let v: bool = value.parse().context("Expected 'true' or 'false'")?;
+                self.ui.scroll_position = v;
             }
             k if k.starts_with("default_feeds") => {
                 bail!("Feed management is not supported via CLI. Use 'feedr config --tui' instead.")
@@ -613,6 +626,33 @@ mod tests {
         assert!(config.validate_and_set("ui.show_preview", "yes").is_err());
         // Failed set must not clobber the previous value
         assert!(config.ui.show_preview);
+    }
+
+    #[test]
+    fn test_scroll_position_defaults_to_true() {
+        assert!(Config::default().ui.scroll_position);
+    }
+
+    #[test]
+    fn test_scroll_position_back_compat_without_key() {
+        let toml_str = "[ui]\nshow_preview = false\n";
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.ui.scroll_position);
+    }
+
+    #[test]
+    fn test_scroll_position_get_set() {
+        let mut config = Config::default();
+        assert_eq!(config.get_value("ui.scroll_position").unwrap(), "true");
+
+        config
+            .validate_and_set("ui.scroll_position", "false")
+            .unwrap();
+        assert!(!config.ui.scroll_position);
+        assert_eq!(config.get_value("ui.scroll_position").unwrap(), "false");
+
+        assert!(config.validate_and_set("ui.scroll_position", "yes").is_err());
+        assert!(!config.ui.scroll_position);
     }
 
     #[test]
