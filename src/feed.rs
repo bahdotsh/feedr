@@ -1140,12 +1140,75 @@ impl TextDecorator for CleanDecorator {
     }
 }
 
+/// Return `true` if `s` appears to contain HTML markup (tags or character
+/// entities). Raw Markdown or plain text without HTML tags/entities returns
+/// `false` so callers can avoid running it through `html2text` (which would
+/// collapse Markdown newlines into single paragraphs).
+fn looks_like_html(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            let rest = &s[i + 1..];
+            let lower_rest = rest.get(..8).map(|p| p.to_ascii_lowercase());
+            let is_autolink = lower_rest.as_deref().is_some_and(|p| {
+                p.starts_with("http://") || p.starts_with("https://") || p.starts_with("mailto:")
+            });
+            if !is_autolink {
+                if let Some(&next) = bytes.get(i + 1) {
+                    if next == b'/' || next == b'!' {
+                        if rest.contains('>') {
+                            return true;
+                        }
+                    } else if next.is_ascii_alphabetic() {
+                        // Require tag name chars followed by whitespace, '/', or '>'
+                        let name_end = rest
+                            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == ':'))
+                            .unwrap_or(rest.len());
+                        if let Some(after_name) = rest.as_bytes().get(name_end) {
+                            if matches!(after_name, b' ' | b'\t' | b'\n' | b'\r' | b'/' | b'>')
+                                && rest[name_end..].contains('>')
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } else if bytes[i] == b'&' {
+            let rest = &s[i + 1..];
+            if let Some(semi) = rest.find(';') {
+                if (1..=12).contains(&semi) {
+                    let entity = &rest[..semi];
+                    let valid_entity = if let Some(hex) = entity
+                        .strip_prefix("#x")
+                        .or_else(|| entity.strip_prefix("#X"))
+                    {
+                        !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit())
+                    } else if let Some(dec) = entity.strip_prefix('#') {
+                        !dec.is_empty() && dec.chars().all(|c| c.is_ascii_digit())
+                    } else {
+                        entity.chars().all(|c| c.is_ascii_alphanumeric())
+                    };
+                    if valid_entity {
+                        return true;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 /// Convenience: flatten any `<table>` markup, then render with
-/// [`CleanDecorator`] at the given width. The single HTML→text path for
-/// feed descriptions: `FeedItem::plain_text` (pipe payloads, filters) and
-/// the detail/dashboard views all go through here, so what the user sees,
-/// searches, and pipes is the same text.
+/// [`CleanDecorator`] at the given width. When `html` contains no HTML
+/// tags or entities (e.g. raw Markdown or plain text), returns it as-is so
+/// line breaks and Markdown block syntax are preserved.
 pub(crate) fn render_clean_html(html: &str, width: usize) -> String {
+    if !looks_like_html(html) {
+        return html.to_string();
+    }
     let prepped = flatten_description_html(html);
     html2text::from_read_with_decorator(prepped.as_bytes(), width, CleanDecorator::new())
 }
@@ -1270,6 +1333,15 @@ mod tests {
             out.contains("*suggestive*"),
             "expected `<em>` to render as `*...*` in:\n{out}"
         );
+    }
+
+    #[test]
+    fn render_clean_html_preserves_raw_markdown_without_html() {
+        let md = "# Title\n\n- Item 1\n- Item 2\n\nSee <https://example.com> and a < b.";
+        assert_eq!(render_clean_html(md, 80), md);
+        assert!(looks_like_html("<p>Hello</p>"));
+        assert!(looks_like_html("Tom &amp; Jerry"));
+        assert!(!looks_like_html(md));
     }
 
     #[test]
