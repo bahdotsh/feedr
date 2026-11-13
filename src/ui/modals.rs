@@ -756,6 +756,11 @@ pub(super) fn render_help_overlay<B: Backend>(f: &mut Frame<B>, app: &App, color
                 &mut lines,
             );
             add_key(
+                &kd(&KeyAction::ToggleReadMode),
+                "Toggle read mode (fullscreen)",
+                &mut lines,
+            );
+            add_key(
                 &kd(&KeyAction::OpenSearch),
                 "Search across all feeds",
                 &mut lines,

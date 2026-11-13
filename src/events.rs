@@ -791,7 +791,9 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                 }
                 // Configurable keybindings via match guards
                 _ if app.key_matches(KeyAction::Quit, &key) => {
-                    if app.is_searching {
+                    if app.read_mode {
+                        app.read_mode = false;
+                    } else if app.is_searching {
                         app.exit_detail_view(View::Dashboard);
                         app.selected_item = Some(0);
                     } else {
@@ -802,7 +804,9 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                     handle_toggle_star_current(app);
                 }
                 _ if app.key_matches(KeyAction::Back, &key) => {
-                    if app.is_searching {
+                    if app.read_mode {
+                        app.read_mode = false;
+                    } else if app.is_searching {
                         app.exit_detail_view(View::Dashboard);
                         app.selected_item = Some(0);
                     } else {
@@ -855,6 +859,9 @@ pub(crate) fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) -
                 }
                 _ if app.key_matches(KeyAction::FetchFullText, &key) => {
                     app.toggle_or_request_fulltext();
+                }
+                _ if app.key_matches(KeyAction::ToggleReadMode, &key) => {
+                    app.toggle_read_mode();
                 }
                 _ => {}
             },
@@ -2292,5 +2299,56 @@ mod tests {
         let back = make_key(KeyCode::Char('h'), KeyModifiers::NONE);
         let _ = handle_key_event(&mut app, back).unwrap();
         assert!(app.article_search_query.is_empty());
+    }
+
+    #[test]
+    fn test_f_in_detail_view_toggles_read_mode() {
+        let mut app = make_detail_app();
+        assert!(!app.read_mode);
+
+        let f_key = make_key(KeyCode::Char('f'), KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, f_key).unwrap();
+        assert!(app.read_mode);
+
+        let _ = handle_key_event(&mut app, f_key).unwrap();
+        assert!(!app.read_mode);
+    }
+
+    #[test]
+    fn test_back_and_quit_in_read_mode_exit_read_mode_before_leaving_detail() {
+        for exit_key in [
+            make_key(KeyCode::Esc, KeyModifiers::NONE),
+            make_key(KeyCode::Char('h'), KeyModifiers::NONE),
+            make_key(KeyCode::Char('q'), KeyModifiers::NONE),
+        ] {
+            let mut app = make_detail_app();
+            app.read_mode = true;
+
+            let _ = handle_key_event(&mut app, exit_key).unwrap();
+            assert!(!app.read_mode, "first press should exit read mode");
+            assert_eq!(
+                app.view,
+                View::FeedItemDetail,
+                "first press should stay in detail view"
+            );
+
+            let _ = handle_key_event(&mut app, exit_key).unwrap();
+            assert_eq!(
+                app.view,
+                View::FeedItems,
+                "second press should leave detail view"
+            );
+        }
+    }
+
+    #[test]
+    fn test_home_in_read_mode_exits_detail_and_clears_read_mode() {
+        let mut app = make_detail_app();
+        app.read_mode = true;
+
+        let home = make_key(KeyCode::Home, KeyModifiers::NONE);
+        let _ = handle_key_event(&mut app, home).unwrap();
+        assert_eq!(app.view, View::Dashboard);
+        assert!(!app.read_mode);
     }
 }

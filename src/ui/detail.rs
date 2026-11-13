@@ -59,6 +59,7 @@ pub(super) fn render_item_detail<B: Backend>(
     let image_strip_rows: u16 = match &image_url {
         Some(url)
             if !app.compact
+                && !app.read_mode
                 && area.height >= MIN_AREA_HEIGHT_FOR_IMAGE
                 && app.image_cache.has_image(url)
                 && app.image_cache.protocol() == crate::image::ImageProtocol::Kitty =>
@@ -74,13 +75,17 @@ pub(super) fn render_item_detail<B: Backend>(
         app.image_cache.start_fetch(url);
     }
     // Split the area into header, optional image strip, content, and
-    // (optionally) a 1-row search footer. The footer is omitted when
-    // in-article search is inactive so quiet reading is unchanged. The
-    // split happens before the `item` borrow below so the *actual* strip
-    // rect can be stored in `pending_image_render`.
-    let mut constraints: Vec<Constraint> = vec![Constraint::Length(9)]; // Header
-    if image_strip_rows > 0 {
-        constraints.push(Constraint::Length(image_strip_rows));
+    // (optionally) a 1-row search footer. In Read Mode, the header and
+    // image strip are omitted so the content box occupies the full screen.
+    // The footer is omitted when in-article search is inactive so quiet
+    // reading is unchanged. The split happens before the `item` borrow
+    // below so the *actual* strip rect can be stored in `pending_image_render`.
+    let mut constraints: Vec<Constraint> = Vec::new();
+    if !app.read_mode {
+        constraints.push(Constraint::Length(9)); // Header
+        if image_strip_rows > 0 {
+            constraints.push(Constraint::Length(image_strip_rows));
+        }
     }
     constraints.push(Constraint::Min(0)); // Content
     if search_footer_visible {
@@ -90,11 +95,17 @@ pub(super) fn render_item_detail<B: Backend>(
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
-    // Resolve chunk indices: header is always [0]; image strip (if
-    // present) is [1] and shifts content/footer down by one.
-    let content_chunk_idx: usize = if image_strip_rows > 0 { 2 } else { 1 };
+    // Resolve chunk indices: in normal mode header is [0] and image strip
+    // (if present) is [1]; in Read Mode content starts at [0].
+    let content_chunk_idx: usize = if app.read_mode {
+        0
+    } else if image_strip_rows > 0 {
+        2
+    } else {
+        1
+    };
     let footer_chunk_idx: Option<usize> = if search_footer_visible {
-        Some(if image_strip_rows > 0 { 3 } else { 2 })
+        Some(content_chunk_idx + 1)
     } else {
         None
     };
@@ -125,95 +136,97 @@ pub(super) fn render_item_detail<B: Backend>(
     };
 
     if let Some(item) = app.current_item() {
-        // Create header with enhanced typography
-        let mut header_lines = vec![
-            // Title with better emphasis
-            Line::from(vec![Span::styled(
-                &item.title,
-                Style::default()
-                    .fg(colors.text)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            // Add spacing after title
-            Line::from(""),
-        ];
-
-        // Build metadata line with enhanced formatting
-        let mut metadata_parts = Vec::new();
-
-        // Add read status with icon
-        if let (Some(feed_idx), Some(item_idx)) = (app.selected_feed, app.selected_item) {
-            let is_read = app.is_item_read(feed_idx, item_idx);
-            metadata_parts.push(Span::styled(
-                if is_read { "✓ Read" } else { "○ Unread" },
-                Style::default().fg(if is_read {
-                    colors.success
-                } else {
-                    colors.highlight
-                }),
-            ));
-        }
-
-        // Add author with emphasis
-        if let Some(author) = &item.author {
-            if !metadata_parts.is_empty() {
-                metadata_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
-            }
-            metadata_parts.push(Span::styled(
-                author,
-                Style::default()
-                    .fg(colors.secondary)
-                    .add_modifier(Modifier::ITALIC),
-            ));
-        }
-
-        // Add date
-        if let Some(date) = &item.formatted_date {
-            if !metadata_parts.is_empty() {
-                metadata_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
-            }
-            metadata_parts.push(Span::styled(
-                date,
-                Style::default().fg(colors.text_secondary),
-            ));
-        }
-
-        if !metadata_parts.is_empty() {
-            header_lines.push(Line::from(metadata_parts));
-        }
-
-        // Add subtle separator before link
-        header_lines.push(Line::from(""));
-
-        // Add link if available with better styling
-        if let Some(link) = &item.link {
-            header_lines.push(Line::from(vec![
-                Span::styled("🔗 ", Style::default().fg(colors.muted)),
-                Span::styled(
-                    truncate_url(link, 70),
-                    Style::default()
-                        .fg(colors.primary)
-                        .add_modifier(Modifier::UNDERLINED),
-                ),
-            ]));
-        }
-
         let article_icon = colors.get_icon_article();
-        let header = Paragraph::new(header_lines)
-            .block(
-                Block::default()
-                    .title(format!(" {} Article ", article_icon))
-                    .title_alignment(Alignment::Center)
-                    .borders(Borders::ALL)
-                    .border_type(colors.border_normal)
-                    .border_style(Style::default().fg(colors.border))
-                    .style(Style::default().bg(colors.surface))
-                    .padding(Padding::new(3, 3, 1, 1)), // Increased horizontal padding
-            )
-            .style(Style::default().fg(colors.text))
-            .alignment(Alignment::Left);
+        if !app.read_mode {
+            // Create header with enhanced typography
+            let mut header_lines = vec![
+                // Title with better emphasis
+                Line::from(vec![Span::styled(
+                    &item.title,
+                    Style::default()
+                        .fg(colors.text)
+                        .add_modifier(Modifier::BOLD),
+                )]),
+                // Add spacing after title
+                Line::from(""),
+            ];
 
-        f.render_widget(header, chunks[0]);
+            // Build metadata line with enhanced formatting
+            let mut metadata_parts = Vec::new();
+
+            // Add read status with icon
+            if let (Some(feed_idx), Some(item_idx)) = (app.selected_feed, app.selected_item) {
+                let is_read = app.is_item_read(feed_idx, item_idx);
+                metadata_parts.push(Span::styled(
+                    if is_read { "✓ Read" } else { "○ Unread" },
+                    Style::default().fg(if is_read {
+                        colors.success
+                    } else {
+                        colors.highlight
+                    }),
+                ));
+            }
+
+            // Add author with emphasis
+            if let Some(author) = &item.author {
+                if !metadata_parts.is_empty() {
+                    metadata_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
+                }
+                metadata_parts.push(Span::styled(
+                    author,
+                    Style::default()
+                        .fg(colors.secondary)
+                        .add_modifier(Modifier::ITALIC),
+                ));
+            }
+
+            // Add date
+            if let Some(date) = &item.formatted_date {
+                if !metadata_parts.is_empty() {
+                    metadata_parts.push(Span::styled(" · ", Style::default().fg(colors.muted)));
+                }
+                metadata_parts.push(Span::styled(
+                    date,
+                    Style::default().fg(colors.text_secondary),
+                ));
+            }
+
+            if !metadata_parts.is_empty() {
+                header_lines.push(Line::from(metadata_parts));
+            }
+
+            // Add subtle separator before link
+            header_lines.push(Line::from(""));
+
+            // Add link if available with better styling
+            if let Some(link) = &item.link {
+                header_lines.push(Line::from(vec![
+                    Span::styled("🔗 ", Style::default().fg(colors.muted)),
+                    Span::styled(
+                        truncate_url(link, 70),
+                        Style::default()
+                            .fg(colors.primary)
+                            .add_modifier(Modifier::UNDERLINED),
+                    ),
+                ]));
+            }
+
+            let header = Paragraph::new(header_lines)
+                .block(
+                    Block::default()
+                        .title(format!(" {} Article ", article_icon))
+                        .title_alignment(Alignment::Center)
+                        .borders(Borders::ALL)
+                        .border_type(colors.border_normal)
+                        .border_style(Style::default().fg(colors.border))
+                        .style(Style::default().bg(colors.surface))
+                        .padding(Padding::new(3, 3, 1, 1)), // Increased horizontal padding
+                )
+                .style(Style::default().fg(colors.text))
+                .alignment(Alignment::Left);
+
+            f.render_widget(header, chunks[0]);
+        }
         // The image strip (chunks[1], if present) is intentionally NOT
         // rendered into — the cells stay blank so the Kitty escapes
         // emitted after `terminal.draw()` returns paint the image on

@@ -178,6 +178,7 @@ All keybindings below show their defaults. You can remap any action via the `[ke
 | `o` | Open item in browser |
 | `l` | Extract and show all links |
 | `Shift+F` | Toggle/fetch full-text (Readability) |
+| `f` | Toggle read mode (fullscreen) |
 
 #### Starred View
 | Key | Action |
@@ -459,6 +460,7 @@ toggle_theme = "F5"                # Function keys
 | `assign_category` | `c` | Assign category to feed |
 | `extract_links` | `l` | Extract links from article |
 | `fetch_full_text` | `Shift+F` | Toggle/fetch full-text (Readability) |
+| `toggle_read_mode` | `f` | Toggle read mode (fullscreen) |
 | `scroll_preview_up` | `Shift+K`, `Shift+Up` | Scroll preview up |
 | `scroll_preview_down` | `Shift+J`, `Shift+Down` | Scroll preview down |
 | `toggle_expand` | `Space` | Expand/collapse in tree view |
