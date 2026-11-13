@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::ui::style_analyzer::StyleAnalyzer;
 use crate::ui::utils::{count_wrapped_lines, format_content_for_reading};
 use crate::ui::ColorScheme;
 use ratatui::{
@@ -493,12 +494,8 @@ fn render_preview_pane<B: Backend>(
     if let Some(desc) = &item.description {
         let raw_text = crate::feed::render_clean_html(desc, area.width.saturating_sub(10) as usize);
         let formatted = format_content_for_reading(&raw_text);
-        for line in formatted.lines() {
-            lines.push(Line::from(vec![Span::styled(
-                line.to_string(),
-                Style::default().fg(colors.text),
-            )]));
-        }
+        let style = StyleAnalyzer::analyze(&formatted);
+        lines.extend(style.renderer().render(&formatted, colors));
     } else {
         lines.push(Line::from(vec![Span::styled(
             "No content available",
@@ -544,6 +541,7 @@ fn render_preview_pane<B: Backend>(
                 .style(Style::default().bg(colors.surface))
                 .padding(Padding::new(2, 2, 1, 1)),
         )
+        .style(Style::default().fg(colors.text))
         .scroll((preview_scroll, 0))
         .wrap(Wrap { trim: true });
 

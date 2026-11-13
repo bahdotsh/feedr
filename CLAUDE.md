@@ -49,6 +49,8 @@ MSRV: 1.75.0. CI runs tests on stable, beta, and 1.75.0.
 - **`categories.rs`** — Category management UI.
 - **`summary.rs`** — Session summary ("What's New") screen.
 - **`modals.rs`** — Error, input, filter, link overlay, and help overlay modals.
+- **`style_analyzer.rs`** — `StyleAnalyzer` and `TextStyle` (`Plain` / `Markdown`) for detecting article body formatting style.
+- **`renderer.rs`** — `Renderer` trait, `MarkdownRenderer`, `PlainRenderer`, and search-highlight line overlay (`highlight_lines` / `lines_to_plain_text`).
 - **`utils.rs`** — Shared rendering utilities.
 
 ### Key patterns

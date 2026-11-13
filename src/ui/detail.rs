@@ -1,5 +1,7 @@
-use crate::app::{find_article_matches, App, ArticleMatch, ExtractionState, InputMode};
+use crate::app::{find_article_matches, App, ExtractionState, InputMode};
 use crate::keybindings::{key_display, KeyAction};
+use crate::ui::renderer::{highlight_lines, lines_to_plain_text};
+use crate::ui::style_analyzer::StyleAnalyzer;
 use crate::ui::utils::{count_wrapped_lines, format_content_for_reading, truncate_url};
 use crate::ui::ColorScheme;
 use ratatui::{
@@ -300,8 +302,15 @@ pub(super) fn render_item_detail<B: Backend>(
             .saturating_sub(8) // increased padding for better reading width
             as usize;
 
+        // Detect the body's style and render into styled lines first so
+        // line-count / scroll calculations and search match offsets align
+        // with what is actually displayed (e.g. stripped `#` / `**` / fences).
+        let text_style = StyleAnalyzer::analyze(&description);
+        let rendered_lines = text_style.renderer().render(&description, colors);
+        let rendered_text = lines_to_plain_text(&rendered_lines);
+
         // Calculate the number of lines the wrapped content will take
-        let content_lines = count_wrapped_lines(&description, content_width);
+        let content_lines = count_wrapped_lines(&rendered_text, content_width);
 
         // Update the max scroll value
         app.update_detail_max_scroll(content_lines, viewport_height);
@@ -322,7 +331,7 @@ pub(super) fn render_item_detail<B: Backend>(
             // source. Re-derivation here is the source of truth — these
             // writes happen once per frame the search is live.
             app.article_body_cache.clear();
-            app.article_body_cache.push_str(&description);
+            app.article_body_cache.push_str(&rendered_text);
             app.article_body_width_cache = content_width;
 
             // Recompute matches against the freshly rendered body. Clamp
@@ -332,7 +341,7 @@ pub(super) fn render_item_detail<B: Backend>(
             // necessarily the "same" one — the i-th match before a body
             // change is rarely the i-th match after — but landing on a
             // valid match beats resetting to 0 every keystroke.
-            let matches = find_article_matches(&description, &app.article_search_query);
+            let matches = find_article_matches(&rendered_text, &app.article_search_query);
             if matches.is_empty() {
                 app.article_search_current = None;
             } else {
@@ -402,12 +411,8 @@ pub(super) fn render_item_detail<B: Backend>(
             format!(" {} {}{} ", article_icon, body_label, match_suffix)
         };
 
-        // Build the rendered body as styled lines so match ranges can be
-        // highlighted. `Wrap { trim: true }` on the Paragraph preserves
-        // intra-line span styling under soft wrap, so we don't need to
-        // pre-wrap ourselves. Lines without matches collapse to a single
-        // `Span::raw` to avoid unnecessary allocations.
-        let body_lines = build_styled_body(&description, &matches, current_idx, colors);
+        // Overlay search highlights onto the styled body lines.
+        let body_lines = highlight_lines(rendered_lines, &matches, current_idx, colors);
 
         // Create content paragraph with theme-specific styling
         let content = Paragraph::new(body_lines)
@@ -488,82 +493,24 @@ fn render_search_footer<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, col
     }
 }
 
-/// Build the body as styled `Line`s, applying highlight spans for each
-/// match. The match at `current_idx` (when set) is rendered with a
-/// stronger style so the user can tell which one `n`/`N` will move from.
-///
-/// Lifetimes: the returned `Line`s borrow from `body` directly — unmatched
-/// segments and unmatched whole lines are zero-copy `Span::raw(&str)` /
-/// `Line::raw(&str)`. Only the very thin set of highlight spans need
-/// distinct styling and even those borrow their text from `body`.
-pub(super) fn build_styled_body<'a>(
-    body: &'a str,
-    matches: &[ArticleMatch],
-    current_idx: Option<usize>,
-    colors: &ColorScheme,
-) -> Vec<Line<'a>> {
-    // Non-current matches: foreground tinted only, no background fill, no
-    // bold — present but quiet. The match the `n` cursor sits on gets the
-    // attention: filled `highlight` background, surface-colored text, bold.
-    let highlight_style = Style::default().fg(colors.highlight);
-    let current_style = Style::default()
-        .bg(colors.highlight)
-        .fg(colors.surface)
-        .add_modifier(Modifier::BOLD);
-
-    // `find_article_matches` already emits matches in line-major order
-    // (outer = lines, inner = positions within a line). Walk both lines
-    // and matches with a single cursor instead of bucketing into a
-    // HashMap — saves the allocation and keeps the data flow obvious.
-    let mut match_cursor = 0usize;
-
-    body.split('\n')
-        .enumerate()
-        .map(|(line_idx, line)| {
-            // Skip any matches whose line index is behind us (should not
-            // happen in practice, but defensive against future callers).
-            while match_cursor < matches.len() && matches[match_cursor].line < line_idx {
-                match_cursor += 1;
-            }
-            // Find the contiguous slice of matches that belong to this line.
-            let line_start = match_cursor;
-            while match_cursor < matches.len() && matches[match_cursor].line == line_idx {
-                match_cursor += 1;
-            }
-            let line_matches = &matches[line_start..match_cursor];
-
-            if line_matches.is_empty() {
-                // `Line::from(&'a str)` borrows the slice rather than
-                // copying it (`Line::raw` isn't available in ratatui 0.23).
-                Line::from(line)
-            } else {
-                let mut spans: Vec<Span<'a>> = Vec::with_capacity(line_matches.len() * 2 + 1);
-                let mut col = 0usize;
-                for (offset, m) in line_matches.iter().enumerate() {
-                    if m.start > col {
-                        spans.push(Span::raw(&line[col..m.start]));
-                    }
-                    let style = if Some(line_start + offset) == current_idx {
-                        current_style
-                    } else {
-                        highlight_style
-                    };
-                    spans.push(Span::styled(&line[m.start..m.end], style));
-                    col = m.end;
-                }
-                if col < line.len() {
-                    spans.push(Span::raw(&line[col..]));
-                }
-                Line::from(spans)
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::find_article_matches;
+    use crate::app::{find_article_matches, ArticleMatch};
+
+    /// Build the body as styled `Line`s using [`StyleAnalyzer`] and the matching
+    /// [`Renderer`](crate::ui::renderer::Renderer), then apply highlight spans for
+    /// each search match.
+    fn build_styled_body<'a>(
+        body: &'a str,
+        matches: &[ArticleMatch],
+        current_idx: Option<usize>,
+        colors: &ColorScheme,
+    ) -> Vec<Line<'a>> {
+        let style = StyleAnalyzer::analyze(body);
+        let rendered = style.renderer().render(body, colors);
+        highlight_lines(rendered, matches, current_idx, colors)
+    }
 
     /// Extract the printable text of a `Line` so tests can assert content
     /// independent of span styling. Joins all span text in order.
@@ -676,5 +623,34 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].content.as_ref(), "head ");
         assert_eq!(spans[1].content.as_ref(), "foo");
+    }
+
+    #[test]
+    fn build_styled_body_renders_markdown_and_highlights_rendered_text() {
+        let colors = ColorScheme::dark();
+        let body = "# Heading foo\n\nParagraph with **foo** inside.";
+        let rendered_only = build_styled_body(body, &[], None, &colors);
+        assert_eq!(line_text(&rendered_only[0]), "Heading foo");
+        assert_eq!(line_text(&rendered_only[2]), "Paragraph with foo inside.");
+
+        let visible = lines_to_plain_text(&rendered_only);
+        let matches = find_article_matches(&visible, "foo");
+        assert_eq!(matches.len(), 2);
+
+        let highlighted = build_styled_body(body, &matches, Some(1), &colors);
+        let current_style = Style::default()
+            .bg(colors.highlight)
+            .fg(colors.surface)
+            .add_modifier(Modifier::BOLD);
+        let quiet_style = Style::default().fg(colors.highlight);
+
+        assert!(highlighted[0]
+            .spans
+            .iter()
+            .any(|s| s.content.as_ref() == "foo" && s.style == quiet_style));
+        assert!(highlighted[2]
+            .spans
+            .iter()
+            .any(|s| s.content.as_ref() == "foo" && s.style == current_style));
     }
 }

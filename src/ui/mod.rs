@@ -17,7 +17,9 @@ mod detail;
 mod feed_items;
 mod feed_list;
 mod modals;
+pub mod renderer;
 mod starred;
+pub mod style_analyzer;
 mod summary;
 pub(crate) mod utils;
 
@@ -35,6 +37,8 @@ use summary::render_summary;
 
 // Re-export extract_domain so it remains accessible as crate::ui::extract_domain
 pub use feed_list::extract_domain;
+pub use renderer::{MarkdownRenderer, PlainRenderer, Renderer};
+pub use style_analyzer::{ArticleStyle, StyleAnalyzer, TextStyle};
 
 /// Color scheme for the UI - supports both light and dark themes with distinct personalities
 #[derive(Clone, Debug)]

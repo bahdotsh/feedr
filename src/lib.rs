@@ -9,3 +9,6 @@ pub mod image;
 pub mod keybindings;
 pub mod tui;
 pub mod ui;
+
+pub use ui::renderer::{MarkdownRenderer, PlainRenderer, Renderer};
+pub use ui::style_analyzer::{ArticleStyle, StyleAnalyzer, TextStyle};
