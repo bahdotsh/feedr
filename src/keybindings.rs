@@ -100,6 +100,7 @@ pub enum KeyAction {
     // Detail
     ExtractLinks,
     FetchFullText,
+    ToggleReadMode,
     ScrollPreviewUp,
     ScrollPreviewDown,
     // In-article find (detail view only)
@@ -146,6 +147,7 @@ impl KeyAction {
             Self::AssignCategory => "assign-category",
             Self::ExtractLinks => "extract-links",
             Self::FetchFullText => "fetch-full-text",
+            Self::ToggleReadMode => "toggle-read-mode",
             Self::ScrollPreviewUp => "scroll-preview-up",
             Self::ScrollPreviewDown => "scroll-preview-down",
             Self::OpenArticleSearch => "open-article-search",
@@ -191,6 +193,7 @@ impl FromStr for KeyAction {
             "assign_category" => Ok(Self::AssignCategory),
             "extract_links" => Ok(Self::ExtractLinks),
             "fetch_full_text" => Ok(Self::FetchFullText),
+            "toggle_read_mode" => Ok(Self::ToggleReadMode),
             "scroll_preview_up" => Ok(Self::ScrollPreviewUp),
             "scroll_preview_down" => Ok(Self::ScrollPreviewDown),
             "open_article_search" => Ok(Self::OpenArticleSearch),
@@ -372,6 +375,10 @@ pub fn default_keybindings() -> KeyBindingMap {
     map.insert(
         KeyAction::FetchFullText,
         vec![KeyBinding::new(KeyCode::Char('F'))],
+    );
+    map.insert(
+        KeyAction::ToggleReadMode,
+        vec![KeyBinding::new(KeyCode::Char('f'))],
     );
     map.insert(
         KeyAction::ScrollPreviewUp,
@@ -1150,6 +1157,7 @@ mod tests {
             KeyAction::AssignCategory,
             KeyAction::ExtractLinks,
             KeyAction::FetchFullText,
+            KeyAction::ToggleReadMode,
             KeyAction::ScrollPreviewUp,
             KeyAction::ScrollPreviewDown,
             KeyAction::OpenArticleSearch,

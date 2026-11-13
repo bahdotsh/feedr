@@ -212,6 +212,9 @@ pub struct App {
     /// `run_app` to detect view-change → emit Kitty delete-all so the
     /// image doesn't bleed onto the next view's cells.
     pub last_frame_had_image: bool,
+    /// When true in the detail view, hides the title bar, article header,
+    /// image strip, and help bar so the article content occupies the full screen.
+    pub read_mode: bool,
 }
 
 /// Detail-view → run_app message: "after the next `terminal.draw()` returns,
@@ -546,6 +549,7 @@ impl App {
             image_cache: crate::image::ImageCache::new(),
             pending_image_render: None,
             last_frame_had_image: false,
+            read_mode: false,
         };
 
         app.update_dashboard();
@@ -1599,9 +1603,14 @@ impl App {
     /// the user in an input mode that no other view renders a cue for.
     pub fn exit_detail_view(&mut self, new_view: View) {
         self.detail_vertical_scroll = 0;
+        self.read_mode = false;
         self.clear_article_search();
         self.input_mode = InputMode::Normal;
         self.view = new_view;
+    }
+
+    pub fn toggle_read_mode(&mut self) {
+        self.read_mode = !self.read_mode;
     }
 
     /// Drop any in-article search state. Called when the focused article
@@ -4274,5 +4283,25 @@ mod tests {
         assert_eq!(matches[0].end, 2);
         assert_eq!(matches[1].start, 2);
         assert_eq!(matches[1].end, 4);
+    }
+
+    #[test]
+    fn test_toggle_read_mode() {
+        let mut app = App::new();
+        assert!(!app.read_mode);
+        app.toggle_read_mode();
+        assert!(app.read_mode);
+        app.toggle_read_mode();
+        assert!(!app.read_mode);
+    }
+
+    #[test]
+    fn test_exit_detail_view_resets_read_mode() {
+        let mut app = App::new();
+        app.view = View::FeedItemDetail;
+        app.read_mode = true;
+        app.exit_detail_view(View::FeedItems);
+        assert!(!app.read_mode);
+        assert_eq!(app.view, View::FeedItems);
     }
 }

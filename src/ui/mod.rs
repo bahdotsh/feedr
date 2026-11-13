@@ -271,49 +271,53 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let bg_block = Block::default().style(Style::default().bg(colors.background));
     f.render_widget(bg_block, f.size());
 
-    // Main layout division — compact mode uses tighter spacing
-    let chunks = if app.compact {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .margin(0)
-            .constraints([
-                Constraint::Length(1), // Compact title bar
-                Constraint::Min(0),    // Main content
-                Constraint::Length(1), // Compact help bar
-            ])
-            .split(f.size())
+    if app.view == View::FeedItemDetail && app.read_mode {
+        render_item_detail(f, app, f.size(), &colors);
     } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .margin(1)
-            .constraints([
-                Constraint::Length(4), // Title/tab bar (slightly taller)
-                Constraint::Min(0),    // Main content
-                Constraint::Length(4), // Help bar (slightly taller for breathing room)
-            ])
-            .split(f.size())
-    };
+        // Main layout division — compact mode uses tighter spacing
+        let chunks = if app.compact {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .margin(0)
+                .constraints([
+                    Constraint::Length(1), // Compact title bar
+                    Constraint::Min(0),    // Main content
+                    Constraint::Length(1), // Compact help bar
+                ])
+                .split(f.size())
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints([
+                    Constraint::Length(4), // Title/tab bar (slightly taller)
+                    Constraint::Min(0),    // Main content
+                    Constraint::Length(4), // Help bar (slightly taller for breathing room)
+                ])
+                .split(f.size())
+        };
 
-    if app.compact {
-        render_compact_title_bar(f, app, chunks[0], &colors);
-    } else {
-        render_title_bar(f, app, chunks[0], &colors);
-    }
+        if app.compact {
+            render_compact_title_bar(f, app, chunks[0], &colors);
+        } else {
+            render_title_bar(f, app, chunks[0], &colors);
+        }
 
-    match app.view {
-        View::Dashboard => render_dashboard(f, app, chunks[1], &colors),
-        View::FeedList => render_feed_list(f, app, chunks[1], &colors),
-        View::FeedItems => render_feed_items(f, app, chunks[1], &colors),
-        View::FeedItemDetail => render_item_detail(f, app, chunks[1], &colors),
-        View::CategoryManagement => render_category_management(f, app, chunks[1], &colors),
-        View::Starred => render_starred(f, app, chunks[1], &colors),
-        View::Summary => render_summary(f, app, chunks[1], &colors),
-    }
+        match app.view {
+            View::Dashboard => render_dashboard(f, app, chunks[1], &colors),
+            View::FeedList => render_feed_list(f, app, chunks[1], &colors),
+            View::FeedItems => render_feed_items(f, app, chunks[1], &colors),
+            View::FeedItemDetail => render_item_detail(f, app, chunks[1], &colors),
+            View::CategoryManagement => render_category_management(f, app, chunks[1], &colors),
+            View::Starred => render_starred(f, app, chunks[1], &colors),
+            View::Summary => render_summary(f, app, chunks[1], &colors),
+        }
 
-    if app.compact {
-        render_compact_help_bar(f, app, chunks[2], &colors);
-    } else {
-        render_help_bar(f, app, chunks[2], &colors);
+        if app.compact {
+            render_compact_help_bar(f, app, chunks[2], &colors);
+        } else {
+            render_help_bar(f, app, chunks[2], &colors);
+        }
     }
 
     // Show error if present
@@ -585,7 +589,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                 }
                 View::FeedItemDetail => {
                     format!(
-                        "{}/{}: Scroll | {}/{}: Fast scroll | {}: Open | {}: Star | {}: Toggle read | {}: Links | {}: Full-text | {}: Find | {}/{}: Next/Prev match | {}: Theme | {}: Back | {}: Quit",
+                        "{}/{}: Scroll | {}/{}: Fast scroll | {}: Open | {}: Star | {}: Toggle read | {}: Links | {}: Full-text | {}: Read mode | {}: Find | {}/{}: Next/Prev match | {}: Theme | {}: Back | {}: Quit",
                         key_display(&KeyAction::MoveUp, &app.keybindings),
                         key_display(&KeyAction::MoveDown, &app.keybindings),
                         key_display(&KeyAction::PageUp, &app.keybindings),
@@ -595,6 +599,7 @@ fn render_help_bar<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect, colors: 
                         key_display(&KeyAction::ToggleRead, &app.keybindings),
                         key_display(&KeyAction::ExtractLinks, &app.keybindings),
                         key_display(&KeyAction::FetchFullText, &app.keybindings),
+                        key_display(&KeyAction::ToggleReadMode, &app.keybindings),
                         key_display(&KeyAction::OpenArticleSearch, &app.keybindings),
                         key_display(&KeyAction::NextMatch, &app.keybindings),
                         key_display(&KeyAction::PrevMatch, &app.keybindings),
@@ -743,13 +748,14 @@ fn render_compact_help_bar<B: Backend>(
             kd(&KeyAction::OpenSearch),
         ),
         View::FeedItemDetail => format!(
-            "{}:back {}:scroll {}:open {}:star {}:read {}:fulltext {}:find {}/{}:match",
+            "{}:back {}:scroll {}:open {}:star {}:read {}:fulltext {}:readmode {}:find {}/{}:match",
             kd(&KeyAction::Quit),
             kd(&KeyAction::MoveDown),
             kd(&KeyAction::OpenInBrowser),
             kd(&KeyAction::ToggleStar),
             kd(&KeyAction::ToggleRead),
             kd(&KeyAction::FetchFullText),
+            kd(&KeyAction::ToggleReadMode),
             kd(&KeyAction::OpenArticleSearch),
             kd(&KeyAction::NextMatch),
             kd(&KeyAction::PrevMatch),

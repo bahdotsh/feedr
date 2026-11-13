@@ -1266,4 +1266,67 @@ mod tests {
         assert!(app.pending_macro_steps.is_empty());
         assert!(app.show_help_overlay);
     }
+
+    #[test]
+    fn test_read_mode_renders_fullscreen_and_suppresses_image_strip() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let mut app = App::new();
+        let mut feed = build_feed_with_items(
+            "https://ex.com/feed.xml",
+            vec![("Post Title", Some("https://ex.com/a"))],
+        );
+        feed.items[0].description = Some("<p>Body content here</p>".to_string());
+        feed.items[0].thumbnail = Some("https://ex.com/t.png".to_string());
+        app.feeds.push(feed);
+        app.view = crate::app::View::FeedItemDetail;
+        app.selected_feed = Some(0);
+        app.selected_item = Some(0);
+        app.image_cache
+            .force_protocol(crate::image::ImageProtocol::Kitty);
+        app.image_cache.insert_image(
+            "https://ex.com/t.png".to_string(),
+            Some(std::sync::Arc::new(image::DynamicImage::new_rgb8(100, 100))),
+        );
+
+        let buffer_text = |term: &Terminal<TestBackend>| -> String {
+            let buf = term.backend().buffer();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf.get(x, y).symbol.as_str())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
+        terminal.draw(|f| crate::ui::render(f, &mut app)).unwrap();
+        let normal_screen = buffer_text(&terminal);
+        assert!(app.pending_image_render.is_some());
+        assert!(normal_screen.contains("Dashboard"));
+        assert!(normal_screen.contains("Post Title"));
+        assert!(normal_screen.contains("Body content here"));
+
+        app.read_mode = true;
+        terminal.draw(|f| crate::ui::render(f, &mut app)).unwrap();
+        let read_mode_screen = buffer_text(&terminal);
+        assert!(
+            app.pending_image_render.is_none(),
+            "read mode must suppress the image strip"
+        );
+        assert!(
+            !read_mode_screen.contains("Dashboard"),
+            "read mode must hide the top tab bar"
+        );
+        assert!(
+            !read_mode_screen.contains("Post Title"),
+            "read mode must hide the article metadata header"
+        );
+        assert!(
+            read_mode_screen.contains("Body content here"),
+            "read mode must still render the article body"
+        );
+    }
 }
